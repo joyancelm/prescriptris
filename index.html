@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Prescriptris</title>
+  <style>
+    html, body { margin:0; height:100%; overflow:hidden; background:#f0f8ff; }
+    canvas { display:block; width:100%; height:100%; image-rendering:pixelated; }
+  </style>
+</head>
+<body>
+  <canvas id="gameCanvas"></canvas>
+  <script>
+    // --- Globals & dynamic sizing vars ---
+    let canvas, ctx;
+    let CANVAS_W, CANVAS_H, GRID_SIZE;
+    const COLS = 10, ROWS = 20;
+    const PREVIEW_SIZE = 4, TEXT_GAP = 6, UI_PAD = 10;
+
+    // Sprite / state globals
+    let pillSheets = [], bottleImg, bgWell, bgFull;
+    let locked = {};     // key="y,x" -> {frames:[...], offset}
+    let current, nextPiece;
+    let fallSpeed = 270, lastFall = 0;
+    let score = 0, highScore = 0;
+    let gameOver = false;
+    let holdPiece = null;
+    let holdUsed  = false;    // prevents multiple holds per drop
+
+
+    //logoIm = logo;
+
+    // --- Handle resizing ---
+    function resizeCanvas() {
+      CANVAS_W = window.innerWidth;
+      CANVAS_H = window.innerHeight;
+      canvas.width  = CANVAS_W;
+      canvas.height = CANVAS_H;
+      GRID_SIZE = Math.floor(
+        Math.min(
+          CANVAS_W / (COLS + 10),
+          CANVAS_H / (ROWS + 5)
+        )
+      );
+    }
+    window.addEventListener('resize', resizeCanvas);
+
+    // --- Image loader ---
+    function loadImage(src) {
+      return new Promise(res => {
+        const img = new Image();
+        img.onload = () => res(img);
+        img.src = src;
+      });
+    }
+
+    // --- Tetromino shapes (5×5 bitmaps) ---
+    const SHAPES = [
+      [ ['.....','.....','OOOO.','.....','.....'], ['..O..','..O..','..O..','..O..','.....'] ],
+      [ ['.....','.....','.OOO.','..O..','.....'], ['..O..','.OO..','..O..','.....','.....'], ['.....','..O..','.OOO.','.....','.....'], ['..O..','..OO.','..O..','.....','.....'] ],
+      [ ['.....','.....','.OO..','..OO.','.....'], ['..O..','.OO..','.O...','.....','.....'] ],
+      [ ['.....','.....','..OO.','.OO..','.....'], ['.O...','.OO..','..O..','.....','.....'] ],
+      [ ['.....','.....','.OO..','.OO..','.....'] ],
+      [ ['..O..','..O..','..OO.','.....','.....'], ['.....','.OOO.','.O...','.....','.....'], ['.OO..','..O..','..O..','.....','.....'], ['...O.','.OOO.','.....','.....','.....'] ],
+      [ ['..O..','..O..','.OO..','.....','.....'], ['.O...','.OOO.','.....','.....','.....'], ['..OO.','..O..','..O..','.....','.....'], ['.OOO.','...O.','.....','.....','.....'] ]
+    ];
+
+    // --- Tetromino class ---
+    class Tetromino {
+      constructor(x,y,shape){
+        this.x=x; this.y=y; this.shape=shape; this.rot=0;
+        const sheet = pillSheets[Math.floor(Math.random()*pillSheets.length)];
+        this.frames=sheet;
+        this.offset=Math.floor(Math.random()*sheet.length);
+      }
+      get format(){ return SHAPES[this.shape][this.rot % SHAPES[this.shape].length]; }
+      get cells(){
+        const out=[];
+        this.format.forEach((row,i)=> row.split('').forEach((c,j)=> c==='O' && out.push([this.x+j,this.y+i])));
+        return out;
+      }
+      currentFrame(){ return (Math.floor(performance.now()/250)+this.offset)%this.frames.length; }
+      get sprite(){ return this.frames[this.currentFrame()]; }
+    }
+
+    // --- Game helpers ---
+    function randPiece(){ return new Tetromino(Math.floor(COLS/2)-2,0,Math.floor(Math.random()*SHAPES.length)); }
+    function valid(cells){ return cells.every(([x,y])=> x>=0&&x<COLS&&y<ROWS&&(y<0||!(`${y},${x}` in locked))); }
+    function drawGhost(gx, gy) {
+      // figure out how far the piece would drop
+      let dropY = current.y;
+      while (true) {
+        const canDrop = current.format.every((row, i) =>
+          row.split('').every((c, j) => {
+            if (c !== 'O') return true;
+            const x = current.x + j;
+            const y = dropY + i + 1;
+            return (
+              x >= 0 &&
+              x < COLS &&
+              (y < 0 || (y < ROWS && !(locked[`${y},${x}`])))
+            );
+          })
+        );
+        if (canDrop) dropY++;
+        else break;
+      }
+
+      // draw semi‐transparent pill sprites at dropY
+      ctx.save();
+      ctx.globalAlpha = 0.3;
+      const frameIdx = (Math.floor(performance.now()/250) + current.offset) % current.frames.length;
+      const ghostImg = current.frames[frameIdx];
+      current.format.forEach((row, i) => {
+        row.split('').forEach((c, j) => {
+          if (c === 'O') {
+            const x = current.x + j;
+            const y = dropY + i;
+            if (y >= 0) {
+              ctx.drawImage(
+                ghostImg, 
+                0, 0, ghostImg.width, ghostImg.height,
+                gx + x * GRID_SIZE, 
+                gy + y * GRID_SIZE,
+                GRID_SIZE, GRID_SIZE
+              );
+            }
+          }
+        });
+      });
+      ctx.restore();
+    }
+
+// 1) Replace your existing clearRows() with this:
+    function clearRows() {
+      const fullRows = [];
+      // find all full rows
+      for (let y = ROWS - 1; y >= 0; y--) {
+        let isFull = true;
+        for (let x = 0; x < COLS; x++) {
+          if (!locked[`${y},${x}`]) {
+            isFull = false;
+            break;
+          }
+        }
+        if (isFull) fullRows.push(y);
+      }
+
+      if (fullRows.length === 0) return 0;
+
+      // for each full row, delete it and shift above rows down
+      fullRows.forEach(rowY => {
+        // remove that row
+        for (let x = 0; x < COLS; x++) {
+          delete locked[`${rowY},${x}`];
+        }
+        // shift everything above down by 1
+        // we must process keys from top→bottom to avoid collision
+        Object.keys(locked)
+              .map(k => k.split(',').map(Number))
+              .sort((a, b) => a[0] - b[0])
+              .forEach(([y, x]) => {
+                if (y < rowY) {
+                  const val = locked[`${y},${x}`];
+                  delete locked[`${y},${x}`];
+                  locked[`${y+1},${x}`] = val;
+                }
+              });
+      });
+
+      return fullRows.length;
+    }
+
+    function clearSquares() {
+      let bonus = 0, regs = [];
+      // Only clear regions where all pills share the same sprite sheet
+      for (let size = 4; size >= 2; size--) {
+        for (let y = 0; y <= ROWS - size; y++) {
+          for (let x = 0; x <= COLS - size; x++) {
+            // Determine first cell's frame group
+            const firstKey = `${y},${x}`;
+            if (!(firstKey in locked)) continue;
+            const targetFrames = locked[firstKey].frames;
+            let match = true;
+            // Check every cell in region
+            for (let dy = 0; dy < size && match; dy++) {
+              for (let dx = 0; dx < size; dx++) {
+                const key = `${y+dy},${x+dx}`;
+                if (!(key in locked) || locked[key].frames !== targetFrames) {
+                  match = false;
+                  break;
+                }
+              }
+            }
+            if (match) {
+              regs.push({x, y, size});
+              bonus += size * size * 5;
+              // Remove matched locked cells
+              for (let dy = 0; dy < size; dy++) {
+                for (let dx = 0; dx < size; dx++) {
+                  delete locked[`${y+dy},${x+dx}`];
+                }
+              }
+            }
+          }
+        }
+      }
+      score += bonus;
+      return regs;
+    }
+
+    // after you do: highScore = Math.max(highScore, score);
+    if (score > highScore) {
+      highScore = score;
+      // 💾 WRITE IT BACK so it persists across reloads
+      localStorage.setItem('prescriptris_high', highScore);
+    }
+    // --- Restart logic ---
+    function restartGame(){ locked={}; lastFall=performance.now(); current=randPiece(); nextPiece=randPiece(); score=0; gameOver=false; requestAnimationFrame(loop); }
+
+        // --- Main loop ---
+    function loop(ts) {
+      // 0) Ensure canvas + GRID_SIZE up to date
+      resizeCanvas();
+      // 1) Full-screen background
+      ctx.drawImage(bgFull, 0, 0, CANVAS_W, CANVAS_H);
+
+      // 2) Compute grid origin & size
+      const gridW = COLS * GRID_SIZE,
+            gridH = ROWS * GRID_SIZE,
+            gx    = (CANVAS_W - gridW) / 2 | 0,
+            gy    = (CANVAS_H - gridH) / 2 + 20 | 0;
+
+      // 3) Draw well background
+      ctx.drawImage(bgWell, gx, gy, gridW, gridH);
+    // 3.5) --- GHOST PIECE PREVIEW ---
+      drawGhost(gx, gy);
+
+      // 3.6) --- HOLD SLOT DRAWING ---
+      const hx = 20, hy = 20;
+      
+
+
+      // 4) Draw logo above grid
+      if (logoImg) {
+        const targetW = gridW,
+              aspect  = logoImg.height / logoImg.width,
+              targetH = targetW * aspect,
+              logoX   = (CANVAS_W - targetW) / 2,
+              logoY   = gy - targetH - 20;
+        ctx.drawImage(logoImg, logoX, logoY, targetW, targetH);
+      }
+
+      // 5) Left‐side UI panels (Score / High Score)
+      // --- HOLD SLOT DRAWING ---
+      //const hx = 20, hy = 20;
+      const boxW = GRID_SIZE * PREVIEW_SIZE + UI_PAD * 2;
+      const boxH = GRID_SIZE * PREVIEW_SIZE + UI_PAD * 3 + 20;  // +20 for “HOLD” text
+
+      // background & border
+
+
+      // 6) Next‐piece box + cheat sheet
+      
+// 1) Compute a single uniform width for all left-side boxes
+      ctx.font = "20px monospace";
+      const scoreText   = `Score: ${score}`;
+      const highText    = `High Score: ${highScore}`;
+      const nextLabel   = "Next Pills:";
+      const wScore      = ctx.measureText(scoreText).width;
+      const wHigh       = ctx.measureText(highText).width;
+      const wNextLabel  = ctx.measureText(nextLabel).width;
+      const wPreview    = PREVIEW_SIZE * GRID_SIZE;
+      // cheat sheet lines (14px font)
+      const cheatLines  = [
+        "← Move Left    → Move Right",
+        "↓ Soft Drop    ↑ Rotate",
+        "Any Key = Restart"
+      ];
+      ctx.font = "14px monospace";
+      const wCheat = Math.max(...cheatLines.map(l => ctx.measureText(l).width));
+      // the box width is the max of all these plus padding
+      const leftBoxWidth = Math.max(wScore, wHigh, wNextLabel, wPreview, wCheat) + UI_PAD * 2;
+
+      // 2) Draw Score & High Score panels
+      const uiX = (gx / 2) | 0;
+      let ly    = gy;
+      ctx.font = "20px monospace";
+      function drawPanel(text) {
+        const h = 30;
+        ctx.fillStyle   = "rgba(240,248,255,0.9)";
+        ctx.strokeStyle = "black";
+        ctx.lineWidth   = 2;
+        ctx.fillRect(uiX, ly, leftBoxWidth, h);
+        ctx.strokeRect(uiX, ly, leftBoxWidth, h);
+        ctx.fillStyle = "black";
+        ctx.fillText(text, uiX + UI_PAD, ly + 22);
+        ly += h + 10;
+      }
+      drawPanel(scoreText);
+      drawPanel(highText);
+
+      // 3) Draw Next-Pills preview in its own uniform box
+      ctx.font = "20px monospace";
+      const lh = 20;
+      const bh = lh + TEXT_GAP + PREVIEW_SIZE * GRID_SIZE + UI_PAD * 2;
+      ctx.fillStyle   = "rgba(240,248,255,0.9)";
+      ctx.strokeStyle = "black";
+      ctx.lineWidth   = 2;
+      ctx.fillRect(uiX, ly, leftBoxWidth, bh);
+      ctx.strokeRect(uiX, ly, leftBoxWidth, bh);
+      ctx.fillStyle = "black";
+      ctx.fillText(nextLabel, uiX + UI_PAD, ly + 18);
+
+      // center the 4×4 sprite grid under the label
+      const psx = uiX + (leftBoxWidth - PREVIEW_SIZE * GRID_SIZE) / 2;
+      const psy = ly + lh + TEXT_GAP;
+      nextPiece.cells.forEach(([cx, cy]) => {
+        const img = nextPiece.sprite;
+        ctx.drawImage(
+          img, 0, 0, img.width, img.height,
+          psx + (cx - nextPiece.x) * GRID_SIZE,
+          psy + (cy - nextPiece.y) * GRID_SIZE,
+          GRID_SIZE, GRID_SIZE
+        );
+      });
+      ly += bh + 10;
+
+      // 4) Draw the Cheat-Sheet box immediately below, same width
+      ctx.font = "14px monospace";
+      const lineHeight = 18, cheatGap = 10;
+      const cheatY     = ly + cheatGap;
+      const cheatH     = cheatLines.length * lineHeight + UI_PAD * 2;
+      ctx.fillStyle   = "rgba(240,248,255,0.9)";
+      ctx.strokeStyle = "black";
+      ctx.lineWidth   = 2;
+      ctx.fillRect(uiX, cheatY, leftBoxWidth, cheatH);
+      ctx.strokeRect(uiX, cheatY, leftBoxWidth, cheatH);
+      cheatLines.forEach((line, i) => {
+        const textY = cheatY + UI_PAD + (i + 0.5) * lineHeight + 4;
+        ctx.fillStyle = "black";
+        ctx.fillText(line, uiX + UI_PAD, textY);
+      });
+      ly = cheatY + cheatH + cheatGap;
+
+// ————————————————————————————————————————
+      // 7) Right-side instructions panel (responsive font)
+      // ————————————————————————————————————————
+      const margin = 20;
+      const rightX = gx + gridW + margin;
+      const rightW = CANVAS_W - rightX - margin;
+
+      // draw panel background & border (unchanged)
+      ctx.fillStyle   = "rgba(240,248,255,0.9)";
+      ctx.strokeStyle = "black";
+      ctx.lineWidth   = 2;
+      ctx.fillRect(rightX, gy, rightW, gridH + 20);
+      ctx.strokeRect(rightX, gy, rightW, gridH + 20);
+
+      //  ———————— compute a responsive font size ————————
+      // —— dynamic font sizing ——
+      // pick something proportional to GRID_SIZE, clamped [8, 24]
+      let guideFontSize = Math.floor(GRID_SIZE * 0.5);
+      guideFontSize = Math.max(6, Math.min(guideFontSize, 24));
+      ctx.font      = `${guideFontSize}px PressStart2P, monospace`;
+      ctx.fillStyle = "black";
+
+      // your guide text lines
+      const guide = [
+        "PRESCRIPTRIS: Pharmacy + Tetris!",
+        "",
+        "WHAT IS PRESCRIPTRIS?",
+        "A tongue-in-cheek retro puzzle where you pretend to fill",
+        "Rx orders by stacking falling pill blocks into perfect",
+        "prescriptions before they expire!",
+        "",
+        "PHARMACY SIMULATION FUN:",
+        "- Move pills (blocks) ←/→ to follow the doctor’s orders.",
+        "- Compound your meds: form 2×2+ pill trays to bottle them",
+        "  and earn tasty bonus points.",
+        "",
+        "TIPS & TRICKS:",
+        "- Always start with 2×2 squares for a quick “prescription filled.”",
+        "- Plan ahead for 3×3 & 4×4 mega-bottles—be the pharmacy hero!",
+        "",
+        "SCORING BREAKDOWN:",
+        "- Line Clear (standard refill) = 10 pts",
+        "- Bottle Bonus: 2×2 → 20 | 3×3 → 45 | 4×4 → 80 pts",
+        "",
+        "SPEED THERAPY:",
+        "- Every 5s the pace quickens—no cheat sheets in real life!",
+        "",
+
+        "KEYWORDS:",
+        "pharmacy puzzle, prescription Tetris, retro pill game"
+      ];
+
+
+      // line height is roughly fontSize + 4px
+      // line height just a hair above font size
+      //const lineHeight = guideFontSize + 4;
+      let textY = gy + UI_PAD + guideFontSize;
+
+      // draw each line centered in the panel
+      guide.forEach(line => {
+        const w = ctx.measureText(line).width;
+        const x = rightX + (rightW - w) / 2;
+        ctx.fillText(line, x, textY);
+        textY += lineHeight*1.4;
+      });
+      // 8) Auto‐fall & locking + bottle‐flash as before
+      if (!gameOver && ts - lastFall > fallSpeed) {
+        lastFall = ts;
+        current.y++;
+        if (!valid(current.cells) && current.y > 0) {
+          current.y--;
+          // Lock
+          current.cells.forEach(([x,y]) => {
+            if (y >= 0) locked[`${y},${x}`] = {
+              frames: current.frames,
+              offset: current.offset
+            };
+          });
+          clearRows();
+          const regs = clearSquares();
+          if (regs.length) {
+            regs.forEach(r => {
+              ctx.drawImage(
+                bottleImg,
+                gx + r.x * GRID_SIZE,
+                gy + r.y * GRID_SIZE,
+                r.size * GRID_SIZE,
+                r.size * GRID_SIZE
+              );
+            });
+            setTimeout(() => {
+              current   = nextPiece;
+              nextPiece = randPiece();
+              if (!valid(current.cells)) gameOver = true;
+              requestAnimationFrame(loop);
+            }, 300);
+            return;
+          }
+          holdUsed = false;
+
+          current   = nextPiece;
+          nextPiece = randPiece();
+          if (!valid(current.cells)) gameOver = true;
+        }
+      }
+
+      // 9) Draw locked & current pieces
+      Object.entries(locked).forEach(([key,val]) => {
+        const [y,x] = key.split(",").map(Number);
+        const f      = (Math.floor(performance.now()/250) + val.offset) % val.frames.length;
+        const img    = val.frames[f];
+        ctx.drawImage(
+          img, 0,0,img.width,img.height,
+          gx + x*GRID_SIZE, gy + y*GRID_SIZE,
+          GRID_SIZE, GRID_SIZE
+        );
+      });
+      current.cells.forEach(([x,y]) => {
+        if (y >= 0) {
+          const img = current.sprite;
+          ctx.drawImage(
+            img, 0,0,img.width,img.height,
+            gx + x*GRID_SIZE, gy + y*GRID_SIZE,
+            GRID_SIZE, GRID_SIZE
+          );
+        }
+      });
+
+      // 10) Grid lines on top
+      ctx.strokeStyle = "#333";
+      for (let i=0; i<=COLS; i++){
+        ctx.beginPath();
+        ctx.moveTo(gx + i*GRID_SIZE, gy);
+        ctx.lineTo(gx + i*GRID_SIZE, gy + gridH);
+        ctx.stroke();
+      }
+      for (let j=0; j<=ROWS; j++){
+        ctx.beginPath();
+        ctx.moveTo(gx, gy + j*GRID_SIZE);
+        ctx.lineTo(gx + gridW, gy + j*GRID_SIZE);
+        ctx.stroke();
+      }
+
+      // 11) Game‐over overlay
+      if (gameOver) {
+        ctx.fillStyle='rgba(0,0,0,0.7)'; ctx.fillRect(0,0,CANVAS_W,CANVAS_H);
+        ctx.fillStyle='white'; ctx.font='48px PressStart2P, monospace';
+        const msg='PRESCRIPTION IS OVERDUE!', mw=ctx.measureText(msg).width;
+        ctx.fillText(msg,(CANVAS_W-mw)/2,CANVAS_H/2);
+        ctx.font='20px monospace';
+        const pr='Press any key to retry', pw=ctx.measureText(pr).width;
+        ctx.fillText(pr,(CANVAS_W-pw)/2,CANVAS_H/2+40);
+        return;
+      }
+
+
+      // 12) Continue & update high score
+      highScore = Math.max(highScore, score);
+      localStorage.setItem('prescriptris_high', highScore);
+
+      requestAnimationFrame(loop);
+    }
+
+
+    // --- Key handling ---
+    document.addEventListener('keydown',e=>{ if(gameOver){restartGame();return;} switch(e.key){
+      case 'ArrowLeft': current.x--; if(!valid(current.cells)) current.x++; break;
+      case 'ArrowRight': current.x++; if(!valid(current.cells)) current.x--; break;
+      case 'ArrowDown': current.y++; if(!valid(current.cells)) current.y--; break;
+      case 'ArrowUp': current.rot++; if(!valid(current.cells)) current.rot--; break;
+      case 'Shift':
+      case 'c':       // optionally allow “C” as hold
+        if (!holdUsed) {
+          // swap current into hold, spawn new if empty
+          [holdPiece, current] = [current, holdPiece || randPiece()];
+          // reset position of the newly current piece
+          current.x = Math.floor(COLS/2) - 2;
+          current.y = 0;
+          holdUsed = true;
+        }
+        break;
+
+    }});
+
+    // --- Start ---
+    async function init(){
+      canvas=document.getElementById("gameCanvas"); ctx=canvas.getContext("2d"); resizeCanvas();
+      const [s1,s2,s3,bottle,well,full,logo]=await Promise.all([
+        loadImage("assets/sprites/pill_uniform_transparent_1.png"),
+        loadImage("assets/sprites/pill_uniform_transparent_2.png"),
+        loadImage("assets/sprites/pill_uniform_transparent_3.png"),
+        loadImage("assets/sprites/bottle_sprite.png"),
+        loadImage("assets/sprites/background_shelves_tile.png"),
+        loadImage("assets/sprites/background_pharmacy.png"),
+        loadImage("assets/sprites/logo.png")          // <— your cropped rectangular logo
+
+      ]);
+      [s1,s2,s3].forEach(s=>{ const w=s.width/4,h=s.height,frames=[];
+        for(let i=0;i<4;i++){ const c=document.createElement("canvas"); c.width=w; c.height=h;
+          c.getContext("2d").drawImage(s,i*w,0,w,h,0,0,w,h); frames.push(c);
+        }
+        pillSheets.push(frames);
+      });
+      highScore = parseInt(localStorage.getItem('prescriptris_high')) || 0;
+
+      bottleImg=bottle; bgWell=well; bgFull=full; logoImg = logo; restartGame();
+    }
+    init();
+  </script>
+</body>
+</html>
