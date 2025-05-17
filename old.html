@@ -2,38 +2,19 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Prescriptris – Pharmacy Tetris Puzzle Game</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="description"
-        content="Prescriptris is a free browser game that mashes up classic Tetris with retro-pixel pharmacy fun. Stack pills, fill prescriptions, and bottle perfect squares for mega bonuses! Play this pharmacy puzzle game now." />
-  <meta name="keywords"
-        content="pharmacy game, tetris, tetris clone, pill stacking, prescription puzzle, retro game, pharmacy puzzle, bottle bonus, browser game, free tetris, pharmacist, medicine game, pixel art, arcade puzzle" />
-  <meta property="og:title" content="Prescriptris – Retro Pharmacy Tetris Puzzle Game">
-  <meta property="og:description" content="Stack pills into bottles in this free browser Tetris puzzle! Fill prescriptions and earn bonuses in a retro pharmacy setting.">
-  <meta property="og:type" content="game">
-  <meta property="og:image" content="assets/sprites/logo.png">
-  <meta property="og:url" content="https://yourdomain.com/prescriptris">
-  <link rel="canonical" href="https://yourdomain.com/prescriptris" />
+  <title>Prescriptris</title>
   <style>
     html, body { margin:0; height:100%; overflow:hidden; background:#f0f8ff; }
     canvas { display:block; width:100%; height:100%; image-rendering:pixelated; }
   </style>
-  <!-- Google tag (gtag.js) -->
-  <script async src="https://www.googletagmanager.com/gtag/js?id=G-6JM3C1R6B9"></script>
-  <script>
-    window.dataLayer = window.dataLayer || [];
-    function gtag(){dataLayer.push(arguments);}
-    gtag('js', new Date());
-    gtag('config', 'G-6JM3C1R6B9');
-  </script>
 </head>
 <body>
+  <meta name="description"
+      content="Prescriptris is a free browser game that mashes up classic Tetris with retro-pixel pharmacy fun—stack pills into bottles for mega bonuses!" />
+    <meta property="og:title" content="Prescriptris – Retro Pharmacy Tetris">
+    <meta property="og:description" content="Stack pills into bottles in this free browser Tetris puzzle!">
+
   <canvas id="gameCanvas"></canvas>
-  <!--
-    Prescriptris: A free browser-based pharmacy Tetris game.
-    Stack pills, fill prescriptions, and bottle perfect squares for bonuses.
-    Keywords: pharmacy game, tetris, prescription puzzle, pill stacking, retro pixel art, medicine game, pharmacist, arcade puzzle.
-  -->
   <script>
     // --- Globals & dynamic sizing vars ---
     let canvas, ctx;
@@ -50,9 +31,6 @@
     let gameOver = false;
     let holdPiece = null;
     let holdUsed  = false;    // prevents multiple holds per drop
-    //let paused = false;
-    let bottleFlashRegions = [];
-    let bottleFlashUntil = 0;
 
 
     //logoIm = logo;
@@ -255,7 +233,7 @@
     }
 
     // 1B) Lock the current piece, clear lines & squares, then spawn
-    function lockAndClear(gx, gy) {
+    function lockAndClear() {
       // — lock into `locked`
       current.cells.forEach(([x,y]) => {
         if (y >= 0) locked[`${y},${x}`] = {
@@ -270,18 +248,23 @@
 
       // — clear 2×2+ “bottles”
       const regions = clearSquares();
-      if (regions.length || rows > 0) {
-        // trigger bottle flash for 300ms, but do not pause
-        bottleFlashRegions = regions;
-        bottleFlashUntil = performance.now() + 300;
-
-        // Trigger pharmacist celebration animation
-        pharmAnimMode = "celebrate";
-        pharmAnimStart = performance.now();
-        pharmAnimIdx = 0;
+      if (regions.length) {
+        // flash bottles
+        regions.forEach(r => {
+          ctx.drawImage(
+            bottleImg,
+            gx + r.x * GRID_SIZE,
+            gy + r.y * GRID_SIZE,
+            r.size * GRID_SIZE,
+            r.size * GRID_SIZE
+          );
+        });
+        // pause to show the flash, then spawn
+        //setTimeout(spawnNextPiece, 200);
+        return;
       }
 
-      // always spawn next piece immediately
+      // — otherwise spawn immediately
       spawnNextPiece();
     }
         // --- Main loop ---
@@ -290,23 +273,6 @@
       resizeCanvas();
       // 1) Full-screen background
       ctx.drawImage(bgFull, 0, 0, CANVAS_W, CANVAS_H);
-
-      //if (paused) {
-        // Optionally, you can still draw locked pieces and UI, but skip current piece and input
-      //  Object.entries(locked).forEach(([key,val]) => {
-      //   const [y,x] = key.split(",").map(Number);
-      //    const f      = (Math.floor(performance.now()/250) + val.offset) % val.frames.length;
-      //    const img    = val.frames[f];
-      //    ctx.drawImage(
-      //      img, 0,0,img.width,img.height,
-      //     gx + x*GRID_SIZE, gy + y*GRID_SIZE,
-      //      GRID_SIZE, GRID_SIZE
-      //    );
-      //  });
-        // Draw overlays/UI as needed...
-      //  requestAnimationFrame(loop);
-      //  return;
-      //}
 
       // 2) Compute grid origin & size
       const gridW = COLS * GRID_SIZE,
@@ -427,18 +393,6 @@
       });
       ly = cheatY + cheatH + cheatGap;
 
-      const px = uiX;
-const py = ly + UI_PAD;
-const pharmImg = getPharmFrame();
-const pharmW = leftBoxWidth; // Use the correct panel width
-const pharmH = (pharmImg.height / pharmImg.width) * pharmW;
-ctx.drawImage(
-  pharmImg, 0, 0, pharmImg.width, pharmImg.height,
-  uiX, py,
-  pharmW, pharmH
-);
-ly = py + pharmH + 10;
-
 // ————————————————————————————————————————
       // 7) Right-side instructions panel (responsive font)
       // ————————————————————————————————————————
@@ -506,15 +460,44 @@ ly = py + pharmH + 10;
       });
       // 8) Auto‐fall & locking + bottle‐flash as before
       if (!gameOver && ts - lastFall > fallSpeed) {
-  lastFall = ts;
-  current.y++;
-  if (!valid(current.cells) && current.y > 0) {
-    current.y--;
-    lockAndClear(gx, gy);
-    requestAnimationFrame(loop);
-    return;
-  }
-}
+        lastFall = ts;
+        current.y++;
+        if (!valid(current.cells) && current.y > 0) {
+          current.y--;
+          // Lock
+          current.cells.forEach(([x,y]) => {
+            if (y >= 0) locked[`${y},${x}`] = {
+              frames: current.frames,
+              offset: current.offset
+            };
+          });
+          clearRows();
+          const regs = clearSquares();
+          if (regs.length) {
+            regs.forEach(r => {
+              ctx.drawImage(
+                bottleImg,
+                gx + r.x * GRID_SIZE,
+                gy + r.y * GRID_SIZE,
+                r.size * GRID_SIZE,
+                r.size * GRID_SIZE
+              );
+            });
+            setTimeout(() => {
+              current   = nextPiece;
+              nextPiece = randPiece();
+              if (!valid(current.cells)) gameOver = true;
+              requestAnimationFrame(loop);
+            }, 300);
+            return;
+          }
+          holdUsed = false;
+
+          current   = nextPiece;
+          nextPiece = randPiece();
+          if (!valid(current.cells)) gameOver = true;
+        }
+      }
 
       // 9) Draw locked & current pieces
       Object.entries(locked).forEach(([key,val]) => {
@@ -527,18 +510,16 @@ ly = py + pharmH + 10;
           GRID_SIZE, GRID_SIZE
         );
       });
-      if (current && current.cells) {
-  current.cells.forEach(([x,y]) => {
-    if (y >= 0) {
-      const img = current.sprite;
-      ctx.drawImage(
-        img, 0,0,img.width,img.height,
-        gx + x*GRID_SIZE, gy + y*GRID_SIZE,
-        GRID_SIZE, GRID_SIZE
-      );
-    }
-  });
-}
+      current.cells.forEach(([x,y]) => {
+        if (y >= 0) {
+          const img = current.sprite;
+          ctx.drawImage(
+            img, 0,0,img.width,img.height,
+            gx + x*GRID_SIZE, gy + y*GRID_SIZE,
+            GRID_SIZE, GRID_SIZE
+          );
+        }
+      });
 
       // 10) Grid lines on top
       ctx.strokeStyle = "#333";
@@ -572,20 +553,6 @@ ly = py + pharmH + 10;
       highScore = Math.max(highScore, score);
       localStorage.setItem('prescriptris_high', highScore);
 
-      if (bottleFlashRegions.length && performance.now() < bottleFlashUntil) {
-  bottleFlashRegions.forEach(r => {
-    ctx.drawImage(
-      bottleImg,
-      gx + r.x * GRID_SIZE,
-      gy + r.y * GRID_SIZE,
-      r.size * GRID_SIZE,
-      r.size * GRID_SIZE
-    );
-  });
-} else {
-  bottleFlashRegions = [];
-}
-
       requestAnimationFrame(loop);
     }
 
@@ -593,11 +560,6 @@ ly = py + pharmH + 10;
     // --- Key handling ---
     document.addEventListener('keydown', e => {
       if (gameOver) { restartGame(); return; }
-      // Compute gx, gy as in loop()
-      const gridW = COLS * GRID_SIZE,
-            gridH = ROWS * GRID_SIZE,
-            gx    = (CANVAS_W - gridW) / 2 | 0,
-            gy    = (CANVAS_H - gridH) / 2 + 20 | 0;
       switch(e.key) {
         case 'ArrowLeft':
           current.x--; if (!valid(current.cells)) current.x++;
@@ -626,7 +588,7 @@ ly = py + pharmH + 10;
             }
           }
           // lock + clear exactly as above:
-          lockAndClear(gx, gy);
+          lockAndClear();
           break;
       }
     });
@@ -634,15 +596,15 @@ ly = py + pharmH + 10;
     // --- Start ---
     async function init(){
       canvas=document.getElementById("gameCanvas"); ctx=canvas.getContext("2d"); resizeCanvas();
-      const [s1,s2,s3,bottle,well,full,logo,pharmacistSheet]=await Promise.all([
+      const [s1,s2,s3,bottle,well,full,logo]=await Promise.all([
         loadImage("assets/sprites/pill_uniform_transparent_1.png"),
         loadImage("assets/sprites/pill_uniform_transparent_2.png"),
         loadImage("assets/sprites/pill_uniform_transparent_3.png"),
         loadImage("assets/sprites/bottle_sprite.png"),
         loadImage("assets/sprites/background_shelves_tile.png"),
         loadImage("assets/sprites/background_pharmacy.png"),
-        loadImage("assets/sprites/logo.png"),
-        loadImage("assets/sprites/pharmacist.png") // <--- add this line
+        loadImage("assets/sprites/logo.png")          // <— your cropped rectangular logo
+
       ]);
       [s1,s2,s3].forEach(s=>{ const w=s.width/4,h=s.height,frames=[];
         for(let i=0;i<4;i++){ const c=document.createElement("canvas"); c.width=w; c.height=h;
@@ -653,58 +615,8 @@ ly = py + pharmH + 10;
       highScore = parseInt(localStorage.getItem('prescriptris_high')) || 0;
 
       bottleImg=bottle; bgWell=well; bgFull=full; logoImg = logo; restartGame();
-
-      // Pharmacist sprite slicing (2x2 grid, left-to-right, top-to-bottom)
-const PHARM_FRAMES = [];
-const PHARM_ROWS = 2, PHARM_COLS = 2;
-const F_W = pharmacistSheet.width / PHARM_COLS;
-const F_H = pharmacistSheet.height / PHARM_ROWS;
-for (let row = 0; row < PHARM_ROWS; row++) {
-  for (let col = 0; col < PHARM_COLS; col++) {
-    const c = document.createElement("canvas");
-    c.width = F_W;
-    c.height = F_H;
-    c.getContext("2d").drawImage(
-      pharmacistSheet,
-      col * F_W, row * F_H, F_W, F_H,
-      0, 0, F_W, F_H
-    );
-    PHARM_FRAMES.push(c);
-  }
-}
-window.PHARM_FRAMES = PHARM_FRAMES;
-window.pharmAnimOffset = Math.floor(Math.random() * PHARM_FRAMES.length);
     }
     init();
-
-    // --- Pharmacist Animation State ---
-let pharmAnimMode = "normal"; // "normal" or "celebrate"
-let pharmAnimStart = 0;
-let pharmAnimIdx = 0;
-
-// Normal and celebration frame orders
-const PHARM_ANIM_NORMAL = [0, 2];
-const PHARM_ANIM_CELEBRATE = [3, 1, 3];
-
-// Animation helper
-function getPharmFrame() {
-  const now = performance.now();
-  if (pharmAnimMode === "celebrate") {
-    // Each celebration frame lasts 200ms
-    const idx = Math.floor((now - pharmAnimStart) / 200);
-    if (idx >= PHARM_ANIM_CELEBRATE.length) {
-      pharmAnimMode = "normal";
-      pharmAnimStart = now;
-      pharmAnimIdx = 0;
-      return PHARM_FRAMES[PHARM_ANIM_NORMAL[0]];
-    }
-    return PHARM_FRAMES[PHARM_ANIM_CELEBRATE[idx]];
-  } else {
-    // Normal: alternate every 400ms
-    const idx = Math.floor(now / 400) % PHARM_ANIM_NORMAL.length;
-    return PHARM_FRAMES[PHARM_ANIM_NORMAL[idx]];
-  }
-}
   </script>
 </body>
 </html>
