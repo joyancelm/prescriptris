@@ -15,8 +15,63 @@
   <meta property="og:url" content="https://yourdomain.com/prescriptris">
   <link rel="canonical" href="https://yourdomain.com/prescriptris" />
   <style>
-    html, body { margin:0; height:100%; overflow:hidden; background:#f0f8ff; }
-    canvas { display:block; width:100%; height:100%; image-rendering:pixelated; }
+    html, body { 
+      margin:0; 
+      height:100%; 
+      overflow:hidden; 
+      background:#202028; /* Dark grey retro arcade background */
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-family: 'Courier New', monospace; 
+    }
+    #game-container {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      max-width: 100%; 
+      max-height: 100%;
+      box-shadow: none;
+      overflow: hidden;
+      background: #000;
+    }
+    
+    /* CRT Scanline & Screen Curvature Effect */
+    .scanlines {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(
+        to bottom,
+        rgba(18, 16, 16, 0) 50%,
+        rgba(0, 0, 0, 0.25) 50%
+      );
+      background-size: 100% 4px; /* Scanline spacing */
+      pointer-events: none;
+      z-index: 10;
+    }
+    .scanlines::after {
+      content: " ";
+      display: block;
+      position: absolute;
+      top: 0;
+      left: 0;
+      bottom: 0;
+      right: 0;
+      background: radial-gradient(circle, rgba(0,0,0,0) 0%, rgba(0,0,0,0.4) 100%);
+      pointer-events: none;
+    }
+
+    canvas { 
+      display:block; 
+      width:100%; 
+      height:100%; 
+      image-rendering:pixelated; 
+      background: radial-gradient(circle, #2a2a2a 0%, #050505 100%);
+    }
+    .seo-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
   </style>
   <!-- Google tag (gtag.js) -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-6JM3C1R6B9"></script>
@@ -28,12 +83,25 @@
   </script>
 </head>
 <body>
-  <canvas id="gameCanvas"></canvas>
-  <!--
-    Prescriptris: A free browser-based pharmacy Tetris game.
-    Stack pills, fill prescriptions, and bottle perfect squares for bonuses.
-    Keywords: pharmacy game, tetris, prescription puzzle, pill stacking, retro pixel art, medicine game, pharmacist, arcade puzzle.
-  -->
+  <div id="game-container">
+    <canvas id="gameCanvas"></canvas>
+    
+    <!-- CRT Overlay -->
+    <div class="scanlines"></div>
+
+    <!-- SEO Content for Pharmacy Tetris Game -->
+    <div class="seo-text">
+      <h1>Prescriptris: The Pharmacy Tetris Game</h1>
+      <p>Play the best retro pharmacy puzzle game. Stack pills, fill prescriptions, and become a master pharmacist.</p>
+      <h2>How to Play</h2>
+      <ul>
+        <li>Use arrow keys to move and rotate pill blocks.</li>
+        <li>Create full horizontal lines to fill prescriptions.</li>
+        <li>Group pills into 2x2 or larger squares for bottle bonuses!</li>
+        <li>Don't let the pills stack to the top!</li>
+      </ul>
+    </div>
+  </div>
   <script>
     // --- Globals & dynamic sizing vars ---
     let canvas, ctx;
@@ -47,30 +115,139 @@
     let current, nextPiece;
     let fallSpeed = 270, lastFall = 0;
     let score = 0, highScore = 0;
+    let level = 1, linesClearedTotal = 0;
     let gameOver = false;
     let holdPiece = null;
-    let holdUsed  = false;    // prevents multiple holds per drop
-    //let paused = false;
+    let holdUsed  = false;    
     let bottleFlashRegions = [];
     let bottleFlashUntil = 0;
+    
+    // --- Audio System ---
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    function playRetroSound(type) {
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      
+      const now = audioCtx.currentTime;
+      switch(type) {
+        case 'move':
+          osc.type = 'square';
+          osc.frequency.setValueAtTime(220, now);
+          osc.frequency.exponentialRampToValueAtTime(110, now + 0.05);
+          gain.gain.setValueAtTime(0.1, now);
+          gain.gain.exponentialRampToValueAtTime(0.01, now + 0.05);
+          osc.start(now);
+          osc.stop(now + 0.05);
+          break;
+        case 'rotate':
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(440, now);
+          osc.frequency.linearRampToValueAtTime(880, now + 0.05);
+          gain.gain.setValueAtTime(0.1, now);
+          gain.gain.linearRampToValueAtTime(0.01, now + 0.05);
+          osc.start(now);
+          osc.stop(now + 0.05);
+          break;
+        case 'drop':
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(150, now);
+          osc.frequency.exponentialRampToValueAtTime(50, now + 0.1);
+          gain.gain.setValueAtTime(0.2, now);
+          gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+          osc.start(now);
+          osc.stop(now + 0.1);
+          break;
+        case 'lock':
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(200, now);
+          gain.gain.setValueAtTime(0.1, now);
+          gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1); 
+          osc.start(now);
+          osc.stop(now + 0.1);
+          break;
+        case 'clear':
+          osc.type = 'square';
+          osc.frequency.setValueAtTime(440, now);
+          osc.frequency.setValueAtTime(880, now + 0.1);
+          gain.gain.setValueAtTime(0.2, now);
+          gain.gain.linearRampToValueAtTime(0.01, now + 0.3);
+          osc.start(now);
+          osc.stop(now + 0.3);
+          break;
+        case 'bottle':
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(600, now);
+          osc.frequency.exponentialRampToValueAtTime(1200, now + 0.2);
+          gain.gain.setValueAtTime(0.3, now);
+          gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+          osc.start(now);
+          osc.stop(now + 0.3);
+          break;
+      }
+    }
 
+    // --- Particle System ---
+    let particles = [];
+    class Particle {
+      constructor(x, y, color) {
+        this.x = x; this.y = y;
+        this.vx = (Math.random() - 0.5) * 4;
+        this.vy = (Math.random() - 0.5) * 4 - 2;
+        this.life = 1.0;
+        this.color = color;
+      }
+      update() {
+        this.x += this.vx;
+        this.y += this.vy;
+        this.vy += 0.2; // gravity
+        this.life -= 0.02;
+      }
+      draw(ctx) {
+        ctx.globalAlpha = this.life;
+        ctx.fillStyle = this.color;
+        ctx.fillRect(this.x, this.y, 4, 4);
+        ctx.globalAlpha = 1.0;
+      }
+    }
 
     //logoIm = logo;
 
     // --- Handle resizing ---
     function resizeCanvas() {
+      // Fit to window exactly
       CANVAS_W = window.innerWidth;
       CANVAS_H = window.innerHeight;
       canvas.width  = CANVAS_W;
       canvas.height = CANVAS_H;
+      
+      // Calculate responsive grid size
+      // We need room for:
+      // - Grid (10 cols wide)
+      // - Left UI (~6-8 equivalent cols)
+      // - Right UI (~6-8 equivalent cols)
+      // - Top/Bottom margins (~5 rows)
+      
+      const totalGameCols = COLS + 14; // Grid + minimal UI space
+      const totalGameRows = ROWS + 4;  // Grid + minimal vertical margin
+      
       GRID_SIZE = Math.floor(
         Math.min(
-          CANVAS_W / (COLS + 10),
-          CANVAS_H / (ROWS + 5)
+          CANVAS_W / totalGameCols,
+          CANVAS_H / totalGameRows
         )
       );
     }
     window.addEventListener('resize', resizeCanvas);
+
+
+    function updateLevel() {
+      level = Math.floor(linesClearedTotal / 10) + 1; // Level up every 10 lines
+      // Speed formula: starts at ~270ms, drops by ~15ms per level, minimum 80ms
+      fallSpeed = Math.max(80, 270 - (level - 1) * 15);
+    }
 
     // --- Image loader ---
     function loadImage(src) {
@@ -243,14 +420,33 @@
       localStorage.setItem('prescriptris_high', highScore);
     }
     // --- Restart logic ---
-    function restartGame(){ locked={}; lastFall=performance.now(); current=randPiece(); nextPiece=randPiece(); score=0; gameOver=false; requestAnimationFrame(loop); }
+    function restartGame(){ 
+      locked={}; 
+      lastFall=performance.now(); 
+      current=randPiece(); 
+      nextPiece=randPiece(); 
+      holdPiece = null;
+      holdUsed = false;
+      score=0; 
+      level=1;
+      linesClearedTotal=0;
+      updateLevel(); // reset speed
+      gameOver=false; 
+      requestAnimationFrame(loop); 
+    }
 
     // 1A) Spawn next piece, reset hold & check game-over
     function spawnNextPiece() {
+      // If we swapped from hold and hold was empty before, current is now null/undefined
+      // But in the hold logic we manually set current = nextPiece if holding first time.
+      // Standard spawn:
       current   = nextPiece;
       nextPiece = randPiece();
       holdUsed  = false;
       highScore = Math.max(highScore, score);
+      // Valid check needs to happen at spawn point (top middle)
+      current.x = Math.floor(COLS/2)-2;
+      current.y = 0;
       if (!valid(current.cells)) gameOver = true;
     }
 
@@ -266,10 +462,27 @@
 
       // — clear horizontal rows
       const rows = clearRows();
-      score += rows * 10;
+      if (rows > 0) {
+        if(audioCtx.state === 'running') playRetroSound('clear');
+        linesClearedTotal += rows;
+        score += rows * 100 * level; 
+        updateLevel();
+      }
 
       // — clear 2×2+ “bottles”
       const regions = clearSquares();
+      if (regions.length > 0) {
+        // Bonus for bottles based on level
+        regions.forEach(r => {
+          score += r.size * r.size * 50 * level;
+          if(audioCtx.state === 'running') playRetroSound('bottle');
+          // Add particles
+          for(let i=0; i<20; i++) {
+            particles.push(new Particle(gx + r.x * GRID_SIZE + Math.random() * r.size * GRID_SIZE, gy + r.y * GRID_SIZE + Math.random() * r.size * GRID_SIZE, "#ffff00"));
+          }
+        });
+      }
+
       if (regions.length || rows > 0) {
         // trigger bottle flash for 300ms, but do not pause
         bottleFlashRegions = regions;
@@ -320,8 +533,45 @@
       drawGhost(gx, gy);
 
       // 3.6) --- HOLD SLOT DRAWING ---
-      const hx = 20, hy = 20;
+      const holdW = PREVIEW_SIZE * GRID_SIZE + UI_PAD * 2;
+      const holdH = Math.floor(holdW * 0.7); // Significantly reduced height
+
+      // Draw Hold Panel (Top Left)
+      ctx.fillStyle   = "rgba(0, 40, 0, 0.8)";
+      ctx.strokeStyle = "#eee";
+      ctx.lineWidth   = 3;
+      // Position above Score
+      const holdY = gy;
+      const holdX = (gx / 2) | 0; // Same X as other UI
       
+      ctx.fillRect(holdX, holdY, holdW, holdH);
+      ctx.strokeRect(holdX, holdY, holdW, holdH);
+      
+      ctx.fillStyle = "#bbb";
+      ctx.font = "16px 'Courier New', monospace";
+      ctx.fillText("HOLD", holdX + 15, holdY + 20); // Moved text up
+      
+      if (holdPiece) {
+        const psx = holdX + (holdW - PREVIEW_SIZE * GRID_SIZE) / 2;
+        const psy = holdY + 25; // Adjusted piece position
+        // Check if holdPiece.format is defined, otherwise fallback
+        const format = holdPiece.format || SHAPES[holdPiece.shape][holdPiece.rot % SHAPES[holdPiece.shape].length];
+        
+        // Draw the held piece
+        format.forEach((row, i) => {
+          row.split('').forEach((c, j) => {
+            if (c === 'O') {
+              const img = holdPiece.sprite || holdPiece.frames[0]; // fallback
+              ctx.drawImage(img, 
+                0, 0, img.width, img.height,
+                psx + j * GRID_SIZE, 
+                psy + i * GRID_SIZE, 
+                GRID_SIZE, GRID_SIZE
+              );
+            }
+          });
+        });
+      }
 
 
       // 4) Draw logo above grid
@@ -367,34 +617,59 @@
       const leftBoxWidth = Math.max(wScore, wHigh, wNextLabel, wPreview, wCheat) + UI_PAD * 2;
 
       // 2) Draw Score & High Score panels
-      const uiX = (gx / 2) | 0;
-      let ly    = gy;
-      ctx.font = "20px monospace";
-      function drawPanel(text) {
-        const h = 30;
-        ctx.fillStyle   = "rgba(240,248,255,0.9)";
-        ctx.strokeStyle = "black";
-        ctx.lineWidth   = 2;
+      const uiX = (gx / 2) | 0; // Align with Hold panel
+      // Start below the Hold panel
+      const holdW_ = PREVIEW_SIZE * GRID_SIZE + UI_PAD * 2;
+      const holdH_ = Math.floor(holdW_ * 0.7); // Matches reduced height above
+      let ly    = gy + holdH_ + 10; // Reduced gap
+
+      function drawRetroPanel(lbl, val, h=60) { // Reduced panel height default
+        // Drop shadow
+        ctx.fillStyle = "rgba(0,0,0,0.5)";
+        ctx.fillRect(uiX+4, ly+4, leftBoxWidth, h);
+        
+        // Main box
+        ctx.fillStyle   = "rgba(0, 40, 0, 0.8)"; // Prescription bottle dark green
+        ctx.strokeStyle = "#eee";
+        ctx.lineWidth   = 3;
         ctx.fillRect(uiX, ly, leftBoxWidth, h);
         ctx.strokeRect(uiX, ly, leftBoxWidth, h);
-        ctx.fillStyle = "black";
-        ctx.fillText(text, uiX + UI_PAD, ly + 22);
-        ly += h + 10;
+        
+        // Label
+        ctx.font = "16px 'Courier New', monospace";
+        ctx.fillStyle = "#bbb";
+        ctx.fillText(lbl, uiX + 15, ly + 22);
+        
+        // Value
+        ctx.font = "bold 20px 'Courier New', monospace";
+        ctx.fillStyle = "#0f0"; // Retro Green terminal text
+        // Right align value
+        const valStr = "" + val;
+        const valW = ctx.measureText(valStr).width;
+        ctx.fillText(valStr, uiX + leftBoxWidth - valW - 15, ly + 48);
+        
+        ly += h + 8; // Reduced gap between panels
       }
-      drawPanel(scoreText);
-      drawPanel(highText);
+
+      drawRetroPanel("SCORE", score);
+      drawRetroPanel("HIGH", highScore);
+      drawRetroPanel("LEVEL", level); // New Level Panel
 
       // 3) Draw Next-Pills preview in its own uniform box
       ctx.font = "20px monospace";
       const lh = 20;
       const bh = lh + TEXT_GAP + PREVIEW_SIZE * GRID_SIZE + UI_PAD * 2;
-      ctx.fillStyle   = "rgba(240,248,255,0.9)";
-      ctx.strokeStyle = "black";
-      ctx.lineWidth   = 2;
+      
+      // Background for Next Piece
+      ctx.fillStyle   = "rgba(0, 40, 0, 0.8)";
+      ctx.strokeStyle = "#eee";
+      ctx.lineWidth   = 3;
       ctx.fillRect(uiX, ly, leftBoxWidth, bh);
       ctx.strokeRect(uiX, ly, leftBoxWidth, bh);
-      ctx.fillStyle = "black";
-      ctx.fillText(nextLabel, uiX + UI_PAD, ly + 18);
+      
+      ctx.fillStyle = "#eee";
+      ctx.font = "16px 'Courier New', monospace";
+      ctx.fillText(nextLabel, uiX + 15, ly + 20);
 
       // center the 4×4 sprite grid under the label
       const psx = uiX + (leftBoxWidth - PREVIEW_SIZE * GRID_SIZE) / 2;
@@ -404,40 +679,53 @@
         ctx.drawImage(
           img, 0, 0, img.width, img.height,
           psx + (cx - nextPiece.x) * GRID_SIZE,
-          psy + (cy - nextPiece.y) * GRID_SIZE,
+          psy + (cx - nextPiece.x) / 2 + (cy - nextPiece.y) * GRID_SIZE, // Slight adjustment if needed, usually fine
           GRID_SIZE, GRID_SIZE
         );
       });
-      ly += bh + 10;
+      ly += bh + 8;
 
       // 4) Draw the Cheat-Sheet box immediately below, same width
-      ctx.font = "14px monospace";
-      const lineHeight = 18, cheatGap = 10;
-      const cheatY     = ly + cheatGap;
-      const cheatH     = cheatLines.length * lineHeight + UI_PAD * 2;
-      ctx.fillStyle   = "rgba(240,248,255,0.9)";
-      ctx.strokeStyle = "black";
-      ctx.lineWidth   = 2;
+      ctx.font = "12px monospace";
+      const cLineH = 14; 
+      const cGap = 5;
+      
+      const cheatY     = ly + cGap;
+      const cheatH     = cheatLines.length * cLineH + UI_PAD * 2;
+      
+      // Retro Cheat Sheet Styling
+      ctx.fillStyle   = "rgba(0, 40, 0, 0.8)";
+      ctx.strokeStyle = "#eee";
+      ctx.lineWidth   = 3;
       ctx.fillRect(uiX, cheatY, leftBoxWidth, cheatH);
       ctx.strokeRect(uiX, cheatY, leftBoxWidth, cheatH);
+      
       cheatLines.forEach((line, i) => {
-        const textY = cheatY + UI_PAD + (i + 0.5) * lineHeight + 4;
-        ctx.fillStyle = "black";
+        const textY = cheatY + UI_PAD + (i + 0.5) * cLineH;
+        ctx.fillStyle = "#bbb"; 
         ctx.fillText(line, uiX + UI_PAD, textY);
       });
-      ly = cheatY + cheatH + cheatGap;
+      ly = cheatY + cheatH + cGap;
 
       const px = uiX;
-const py = ly + UI_PAD;
-const pharmImg = getPharmFrame();
-const pharmW = leftBoxWidth; // Use the correct panel width
-const pharmH = (pharmImg.height / pharmImg.width) * pharmW;
-ctx.drawImage(
-  pharmImg, 0, 0, pharmImg.width, pharmImg.height,
-  uiX, py,
-  pharmW, pharmH
-);
-ly = py + pharmH + 10;
+      // Pharmacist Logic: Ensure full visibility of the animation
+      const pharmImg = getPharmFrame();
+      const pharmW = leftBoxWidth; 
+      const pharmH = (pharmImg.height / pharmImg.width) * pharmW;
+      
+      let py = ly + 5;
+      
+      // If he goes off screen, clamp him to bottom edge (with margin)
+      // canvasH is available as CANVAS_H
+      if (py + pharmH > CANVAS_H) {
+         py = CANVAS_H - pharmH - 10; 
+      }
+      
+      ctx.drawImage(
+        pharmImg, 0, 0, pharmImg.width, pharmImg.height,
+        px, py,
+        pharmW, pharmH
+      );
 
 // ————————————————————————————————————————
       // 7) Right-side instructions panel (responsive font)
@@ -454,55 +742,73 @@ ly = py + pharmH + 10;
       ctx.strokeRect(rightX, gy, rightW, gridH + 20);
 
       //  ———————— compute a responsive font size ————————
-      // —— dynamic font sizing ——
-      // pick something proportional to GRID_SIZE, clamped [8, 24]
-      let guideFontSize = Math.floor(GRID_SIZE * 0.5);
-      guideFontSize = Math.max(6, Math.min(guideFontSize, 24));
-      ctx.font      = `${guideFontSize}px PressStart2P, monospace`;
-      ctx.fillStyle = "black";
+      // Scale font based on GRID_SIZE, but allow it to grow larger on big screens
+      let guideFontSize = Math.floor(GRID_SIZE * 0.45);
+      // Clamp between 10px and 24px for the "handwritten" note look
+      guideFontSize = Math.max(10, Math.min(guideFontSize, 24));
+      
+      // Use a "Handwritten" style font stack
+      ctx.font      = `${guideFontSize}px 'Segoe Print', 'Comic Sans MS', cursive`;
+      ctx.fillStyle = "#222255"; // Ink blue color for text
 
-      // your guide text lines
+      // Rx Header
+      const rxHeaderH = 50;
+      ctx.fillStyle = "#3366cc";
+      ctx.font = `bold ${guideFontSize * 2}px serif`;
+      ctx.fillText("Rx", rightX + 15, gy + rxHeaderH - 10);
+      
+      ctx.fillStyle = "#444";
+      ctx.font = `bold ${guideFontSize}px monospace`;
+      ctx.fillText("DR. HOUSE", rightX + 70, gy + 30);
+      
+      // Blue divider line
+      ctx.beginPath();
+      ctx.strokeStyle = "#3366cc";
+      ctx.lineWidth = 2;
+      ctx.moveTo(rightX + 10, gy + rxHeaderH);
+      ctx.lineTo(rightX + rightW - 10, gy + rxHeaderH);
+      ctx.stroke();
+
+      // your guide text lines (simulated handwriting)
       const guide = [
-        "PRESCRIPTRIS: Pharmacy + Tetris!",
+        "PATIENT: User #1",
+        "DATE: " + new Date().toLocaleDateString(),
         "",
-        "WHAT IS PRESCRIPTRIS?",
-        "A tongue-in-cheek retro puzzle where you pretend to fill",
-        "Rx orders by stacking falling pill blocks into perfect",
-        "prescriptions before they expire!",
+        "PRESCRIPTION:",
+        "1. Stack pills correctly.",
+        "2. Clear lines for health.",
+        "3. Make 2x2 squares for",
+        "   extra potency (Bonus!).",
         "",
-        "PHARMACY SIMULATION FUN:",
-        "- Move pills (blocks) ←/→ to follow the doctor’s orders.",
-        "- Compound your meds: form 2×2+ pill trays to bottle them",
-        "  and earn tasty bonus points.",
+        "WARNING:",
+        "- May cause addiction.",
+        "- Avoid stacking too high.",
         "",
-        "TIPS & TRICKS:",
-        "- Always start with 2×2 squares for a quick “prescription filled.”",
-        "- Plan ahead for 3×3 & 4×4 mega-bottles—be the pharmacy hero!",
+        "REFILLS: Unlimited",
         "",
-        "SCORING BREAKDOWN:",
-        "- Line Clear (standard refill) = 10 pts",
-        "- Bottle Bonus: 2×2 → 20 | 3×3 → 45 | 4×4 → 80 pts",
-        "",
-        "SPEED THERAPY:",
-        "- Every 5s the pace quickens—no cheat sheets in real life!",
-        "",
-
-        "KEYWORDS:",
-        "pharmacy puzzle, prescription Tetris, retro pill game"
+        "SIGNED: Dr. Tetris"
       ];
 
+      let textY = gy + rxHeaderH + 10 + guideFontSize;
+      const guideLineHeight = guideFontSize * 1.5;
 
-      // line height is roughly fontSize + 4px
-      // line height just a hair above font size
-      //const lineHeight = guideFontSize + 4;
-      let textY = gy + UI_PAD + guideFontSize;
+      // Draw faint blue rules (lined paper)
+      ctx.strokeStyle = "rgba(0, 0, 255, 0.1)";
+      ctx.lineWidth = 1;
 
-      // draw each line centered in the panel
+      // draw each line left-aligned in the panel
+      ctx.font = `${guideFontSize}px 'Segoe Print', 'Comic Sans MS', cursive`;
+      ctx.fillStyle = "#222255"; // Ink Blue
+      
       guide.forEach(line => {
-        const w = ctx.measureText(line).width;
-        const x = rightX + (rightW - w) / 2;
-        ctx.fillText(line, x, textY);
-        textY += lineHeight*1.4;
+        // Draw rule line first
+        ctx.beginPath();
+        ctx.moveTo(rightX + 5, textY + 5);
+        ctx.lineTo(rightX + rightW - 5, textY + 5);
+        ctx.stroke();
+        
+        ctx.fillText(line, rightX + 15, textY);
+        textY += guideLineHeight;
       });
       // 8) Auto‐fall & locking + bottle‐flash as before
       if (!gameOver && ts - lastFall > fallSpeed) {
@@ -557,13 +863,33 @@ ly = py + pharmH + 10;
 
       // 11) Game‐over overlay
       if (gameOver) {
-        ctx.fillStyle='rgba(0,0,0,0.7)'; ctx.fillRect(0,0,CANVAS_W,CANVAS_H);
-        ctx.fillStyle='white'; ctx.font='48px PressStart2P, monospace';
-        const msg='PRESCRIPTION IS OVERDUE!', mw=ctx.measureText(msg).width;
-        ctx.fillText(msg,(CANVAS_W-mw)/2,CANVAS_H/2);
+        ctx.fillStyle='rgba(0,0,0,0.85)'; ctx.fillRect(0,0,CANVAS_W,CANVAS_H);
+        
+        ctx.save();
+        // Rotate text slightly for "Stamped" look
+        ctx.translate(CANVAS_W/2, CANVAS_H/2);
+        ctx.rotate(-0.2);
+        
+        // "Expired" Stamp Box
+        ctx.strokeStyle = "#d00";
+        ctx.lineWidth = 10;
+        ctx.strokeRect(-200, -80, 400, 160);
+        
+        // "Expired" Text
+        ctx.fillStyle='#d00'; 
+        ctx.font='bold 80px "Courier New", monospace';
+        const msg='EXPIRED'; 
+        const mw=ctx.measureText(msg).width;
+        ctx.fillText(msg, -mw/2, 25);
+        
+        ctx.restore();
+
+        // Subtext
+        ctx.fillStyle='white';
         ctx.font='20px monospace';
-        const pr='Press any key to retry', pw=ctx.measureText(pr).width;
-        ctx.fillText(pr,(CANVAS_W-pw)/2,CANVAS_H/2+40);
+        const pr='Press ANY KEY for new prescription'; 
+        const pw=ctx.measureText(pr).width;
+        ctx.fillText(pr, (CANVAS_W-pw)/2, CANVAS_H/2 + 150);
         return;
       }
 
@@ -585,13 +911,21 @@ ly = py + pharmH + 10;
 } else {
   bottleFlashRegions = [];
 }
-
+    // Update and draw particles
+    for (let i = particles.length - 1; i >= 0; i--) {
+      particles[i].life -= 0.02;
+      particles[i].draw(ctx);
+      if (particles[i].life <= 0) particles.splice(i, 1);
+    }
       requestAnimationFrame(loop);
     }
 
 
     // --- Key handling ---
     document.addEventListener('keydown', e => {
+      // Audio Activation on first keypress
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      
       if (gameOver) { restartGame(); return; }
       // Compute gx, gy as in loop()
       const gridW = COLS * GRID_SIZE,
@@ -601,19 +935,43 @@ ly = py + pharmH + 10;
       switch(e.key) {
         case 'ArrowLeft':
           current.x--; if (!valid(current.cells)) current.x++;
+          else playRetroSound('move');
           break;
         case 'ArrowRight':
           current.x++; if (!valid(current.cells)) current.x--;
+          else playRetroSound('move');
           break;
         case 'ArrowDown':
           current.y++; if (!valid(current.cells)) current.y--;
+          else playRetroSound('move');
           break;
         case 'ArrowUp':
           current.rot++; if (!valid(current.cells)) current.rot--;
+          else playRetroSound('rotate');
           break;
         case 'c':
         case 'Shift':
-          // your hold logic...
+        case 'ShiftLeft':
+        case 'ShiftRight':
+           if (!holdUsed) {
+             if (holdPiece === null) {
+               holdPiece = current;
+               // reset position/rotation
+               holdPiece.rot = 0;
+               spawnNextPiece();
+             } else {
+               const temp = current;
+               current = holdPiece;
+               holdPiece = temp;
+               // reset position/rotation of swapped-in piece
+               current.x = Math.floor(COLS/2)-2;
+               current.y = 0;
+               current.rot = 0;
+               holdPiece.rot = 0;
+             }
+             holdUsed = true;
+             playRetroSound('rotate');
+           }
           break;
         case ' ':
         case 'Spacebar':
@@ -625,6 +983,7 @@ ly = py + pharmH + 10;
               break;
             }
           }
+          playRetroSound('drop');
           // lock + clear exactly as above:
           lockAndClear(gx, gy);
           break;
