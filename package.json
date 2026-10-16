@@ -1,0 +1,12 @@
+{
+  "name": "prescriptris",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node scripts/serve.js",
+    "art:logo": "node scripts/build-wordmark.js",
+    "test": "node --test",
+    "check": "node --check game-engine.js && node --check game-input.js && node --check game.js && node --check scripts/serve.js && node --check scripts/build-wordmark.js"
+  }
+}
