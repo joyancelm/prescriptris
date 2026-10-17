@@ -388,7 +388,6 @@ function updateInterface() {
   $('score').textContent = String(engine.score).padStart(6,'0');
   $('best').textContent = String(best).padStart(6,'0');
   $('level').textContent = String(engine.level).padStart(2,'0');
-  $('lines').textContent = String(engine.lines).padStart(2,'0');
   $('tray-lines').textContent = String(engine.lines).padStart(3,'0');
   document.documentElement.style.setProperty('--level-accent',['#9ebce8','#8ecab5','#baa1d7','#e0b477'][(engine.level - 1) % 4]);
   $('bottles').textContent = String(engine.bottles).padStart(2,'0');
@@ -407,7 +406,6 @@ function updateInterface() {
   $('bottle-button').classList.toggle('ready', batches.length > 0);
   $('bottle-preview').textContent = batches.length ? `${batches.length} batch${batches.length === 1 ? '' : 'es'} after drop · +${points}` : 'No batch after drop';
   $('order-number').textContent = String(engine.orders + 1).padStart(3,'0');
-  $('order-title').textContent = engine.order.title;
   $('order-copy').textContent = engine.order.text.replace(String(engine.order.target), String(engine.orderTarget));
   $('order-progress').max = engine.orderTarget;
   $('order-progress').value = engine.orderProgress;
@@ -433,7 +431,7 @@ function updateOverlay() {
   const over = engine.status === 'over';
   $('overlay-eyebrow').textContent = paused ? 'THE NIGHT SHIFT' : over ? 'MARATHON COMPLETE' : 'PHARMACY MARATHON';
   $('overlay-title').textContent = paused ? 'PAUSED' : over ? 'GAME OVER' : 'READY?';
-  $('overlay-copy').textContent = paused ? 'Your tray is right where you left it.' : over ? 'The counter is full. A fresh tray is waiting.' : 'Clear lines. Bottle matching pills. Keep the tray below the top.';
+  $('overlay-copy').textContent = paused ? 'Your tray is right where you left it.' : over ? 'The counter is full. A fresh tray is waiting.' : 'Clear rows. Bottle matching squares.';
   $('final-stats').hidden = !over;
   $('final-stats').textContent = `Score ${engine.score} · Best ${best} · ${engine.lines} rows · ${engine.bottles} bottles`;
   $('start-button').textContent = paused ? 'CONTINUE ▶' : over ? 'PLAY AGAIN ▶' : 'START GAME ▶';
@@ -543,8 +541,8 @@ function autoPause() {
 window.addEventListener('blur', autoPause);
 document.addEventListener('visibilitychange', () => { if (document.hidden) autoPause(); });
 if (window.IntersectionObserver) new IntersectionObserver(([entry]) => { if (!entry.isIntersecting) autoPause(); }).observe(canvas);
-$('about')?.addEventListener('focusin', autoPause);
-$('about')?.addEventListener('pointerdown', autoPause);
+document.querySelectorAll('[data-game-help]').forEach(link => link.addEventListener('click', autoPause));
+$('quick-help')?.addEventListener('toggle', () => { if ($('quick-help').open) autoPause(); });
 window.addEventListener('pagehide', persistBest);
 window.addEventListener('storage', event => {
   if (event.key !== 'prescriptris_high' && event.key !== null) return;

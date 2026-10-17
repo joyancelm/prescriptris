@@ -60,32 +60,23 @@
         "offers": { "@type": "Offer", "price": 0, "url": "https://www.prescriptris.com/" },
         "image": "https://www.prescriptris.com/assets/v2/prescriptris-gameplay.jpg",
         "screenshot": "https://www.prescriptris.com/assets/v2/prescriptris-gameplay.jpg",
-        "softwareHelp": { "@type": "CreativeWork", "url": "https://www.prescriptris.com/#how-to-play", "name": "How to play Prescriptris" },
+        "softwareHelp": { "@type": "CreativeWork", "url": "https://www.prescriptris.com/how-to-play/", "name": "How to play Prescriptris" },
         "inLanguage": "en"
       }
     ]
   }
   </script>
-  <link rel="stylesheet" href="styles.css?v=2.1.0">
+  <link rel="stylesheet" href="styles.css?v=2.2.0">
   <link rel="preload" href="assets/fonts/PressStart2P-Regular.ttf" as="font" type="font/ttf" crossorigin>
-  <script type="module" src="game.js?v=2.1.0"></script>
-  <script>
-    // Keep existing production analytics; local play and tests stay offline.
-    if (location.hostname === 'www.prescriptris.com' || location.hostname === 'prescriptris.com') {
-      window.dataLayer = window.dataLayer || [];
-      window.gtag = function () { window.dataLayer.push(arguments); };
-      gtag('js', new Date()); gtag('config', 'G-6JM3C1R6B9');
-      const analytics = document.createElement('script'); analytics.async = true;
-      analytics.src = 'https://www.googletagmanager.com/gtag/js?id=G-6JM3C1R6B9'; document.head.append(analytics);
-    }
-  </script>
+  <script src="analytics.js?v=2.2.0" defer></script>
+  <script type="module" src="game.js?v=2.2.0"></script>
 </head>
 <body>
   <div class="pharmacy-backdrop" aria-hidden="true"></div>
   <div class="scanlines" aria-hidden="true"></div>
   <div class="app">
     <header class="masthead">
-      <a class="brand" href="./" aria-label="Prescriptris home"><span class="eyebrow">✚ PHARMACY PUZZLE SYSTEM ✚</span><h1><img src="assets/v2/prescriptris-wordmark.svg" width="738" height="98" alt="PRESCRIPTRIS"></h1><span class="brand-tagline">THE NIGHT SHIFT · STACK · MATCH · DISPENSE</span><span class="brand-description">Free pharmacy puzzle game. Play instantly in your browser.</span></a>
+      <a class="brand" href="./" aria-label="Prescriptris home"><span class="eyebrow">✚ PHARMACY PUZZLE SYSTEM ✚</span><h1><img src="assets/v2/prescriptris-wordmark.svg" width="738" height="98" alt="PRESCRIPTRIS"></h1><span class="brand-tagline">THE NIGHT SHIFT</span></a>
       <nav class="toolbar" aria-label="Game options">
         <button id="sound-toggle" class="icon-button" aria-pressed="false" title="Toggle sound (M)">Sound off</button>
         <button id="effects-toggle" class="icon-button" aria-pressed="true" title="Toggle CRT and motion effects">CRT on</button>
@@ -102,8 +93,7 @@
         <section class="panel score-panel" aria-label="Game statistics">
           <div class="stat main-stat"><span>SCORE</span><strong id="score">000000</strong></div>
           <div class="stat"><span>BEST</span><strong id="best">000000</strong></div>
-          <div class="stat-pair"><div class="stat"><span>LEVEL</span><strong id="level">01</strong></div><div class="stat"><span>LINES</span><strong id="lines">00</strong></div></div>
-          <div class="stat"><span>BOTTLED</span><strong id="bottles">00</strong></div>
+          <div class="stat-pair"><div class="stat"><span>LEVEL</span><strong id="level">01</strong></div><div class="stat"><span>BOTTLED</span><strong id="bottles">00</strong></div></div>
         </section>
         <section class="panel statistics-panel"><div class="panel-heading"><h2>STATISTICS</h2><span class="micro">LOCKED</span></div><canvas id="statistics-canvas" width="128" height="154" role="img" aria-label="No pieces placed yet"></canvas></section>
       </aside>
@@ -113,7 +103,7 @@
           <canvas id="gameCanvas" width="320" height="640" tabindex="0" role="img" aria-label="10-column, 20-row pill puzzle. Arrow keys move and rotate; Space drops; B bottles and drops; C holds; P pauses.">Your browser needs canvas support to play.</canvas>
           <div id="overlay" class="board-overlay"><div class="overlay-card">
             <span id="overlay-eyebrow" class="eyebrow">PHARMACY MARATHON</span><h2 id="overlay-title">READY?</h2>
-            <p id="overlay-copy">Clear lines. Bottle matching pills.<br>Keep the tray below the top.</p>
+            <p id="overlay-copy">Clear rows. Bottle matching squares.</p>
             <div id="final-stats" class="final-stats" hidden></div>
             <button id="start-button" class="primary-button">START GAME <span aria-hidden="true">▶</span></button>
             <p id="overlay-hint" class="overlay-hint">ENTER TO START · KEYBOARD &amp; TOUCH</p>
@@ -122,55 +112,23 @@
         </div>
         <button id="bottle-button" class="bottle-button" disabled><span class="bottle-symbol" aria-hidden="true">✚</span><span><strong>Bottle + drop <kbd>B</kbd></strong><small id="bottle-preview">Matching squares, made to order.</small></span><span aria-hidden="true">↧</span></button>
         <div class="touch-controls" aria-label="Touch game controls"><button data-action="left" aria-label="Move left">←</button><button data-action="rotate" aria-label="Rotate clockwise">↻</button><button data-action="right" aria-label="Move right">→</button><button data-action="down" aria-label="Soft drop">↓</button><button data-action="drop" class="touch-drop" aria-label="Hard drop">DROP <span>↧</span></button></div>
-        <p id="action-hint" class="board-footnote">Space drops · B bottles + drops · C holds</p>
+        <p id="action-hint" class="board-footnote">← → move · ↑ rotate · Space drop</p>
       </section>
       <aside class="prescription-column" aria-label="Prescription and instructions">
         <section class="panel next-panel"><div class="panel-heading"><h2>NEXT</h2><span class="micro">+2</span></div><canvas id="next-canvas" width="128" height="168" role="img" aria-label="Next pieces appear when the game starts"></canvas></section>
         <section class="prescription">
           <div class="rx-top"><span class="rx-symbol" aria-hidden="true">℞</span><div>CURRENT RX</div><span class="rx-number" id="order-number">001</span></div>
-          <div class="rx-body"><span class="paper-label">CURRENT PRESCRIPTION</span><h2 id="order-title">The first refill</h2><p id="order-copy">Bottle 2 matching batches.</p><div class="order-progress"><progress id="order-progress" max="2" value="0" aria-label="Prescription progress"></progress><span id="order-count">0 / 2</span></div><span class="order-reward">FILLED → +<span id="order-reward">200</span> POINTS</span><div id="filled-stamp" class="filled-stamp" aria-hidden="true">FILLED ✓</div></div>
+          <div class="rx-body"><p id="order-copy">Bottle 2 matching batches.</p><div class="order-progress"><progress id="order-progress" max="2" value="0" aria-label="Prescription progress"></progress><span id="order-count">0 / 2</span></div><span class="order-reward">FILLED → +<span id="order-reward">200</span> POINTS</span><div id="filled-stamp" class="filled-stamp" aria-hidden="true">FILLED ✓</div></div>
         </section>
         <div class="pharmacist-scene"><canvas id="pharmacist-canvas" width="192" height="168" role="img" aria-label="Your friendly pixel-art pharmacist"></canvas><p id="pharmacist-message">Welcome to the night shift.</p></div>
-        <details class="help-panel"><summary>How to play <span>+</span></summary><div>
-          <div class="recipe"><span class="paper-label">BOTTLING BONUS</span><p>Make a square of the <strong>same pill type</strong>. Keep building, or press <kbd>B</kbd> to drop and bottle.</p><div class="bonus-table"><span>2 × 2<strong>80</strong></span><span>3 × 3<strong>240</strong></span><span>4 × 4<strong>600</strong></span></div><small>Points × level. Largest batches first.<br>Bottling settles loose pills.</small></div>
-          <p>Fill a horizontal row with any pill types to clear it. Clear 10 rows to level up.</p>
-          <p><strong>Space / Drop:</strong> place the piece and clear rows.<br><strong>B / Bottle + drop:</strong> place it, collect matching squares first, then settle pills and clear rows.</p>
-          <p>Squares remain available unless their rows clear. Bottling a 4×4 pays more than four 2×2 batches.</p>
-          <dl><div><dt>← → / A D</dt><dd>Move</dd></div><div><dt>↑ / X · Z</dt><dd>Rotate ↻ · ↺</dd></div><div><dt>↓ / S</dt><dd>Soft drop</dd></div><div><dt>C / Shift</dt><dd>Hold once per piece</dd></div><div><dt>P / Esc · M</dt><dd>Pause · Sound</dd></div></dl>
-          <p>Rows: 100 / 300 / 500 / 800 points for 1–4 at once, × level. Soft drop: 1 per cell. Hard drop: 2 per cell. A filled prescription adds 200 × level.</p>
+        <details id="quick-help" class="help-panel"><summary>Controls <span>+</span></summary><div>
+          <dl><div><dt>← →</dt><dd>Move</dd></div><div><dt>↑ / Z</dt><dd>Rotate ↻ / ↺</dd></div><div><dt>↓</dt><dd>Soft drop</dd></div><div><dt>Space</dt><dd>Drop</dd></div><div><dt>B</dt><dd>Bottle + drop</dd></div><div><dt>C</dt><dd>Hold</dd></div><div><dt>P</dt><dd>Pause</dd></div></dl>
+          <a href="how-to-play/" target="_blank" rel="noopener" data-game-help aria-label="Full rules and scoring (opens in a new tab)">Full rules &amp; scoring ↗</a>
         </div></details>
       </aside>
     </main>
-    <section id="about" class="game-guide" aria-labelledby="about-title">
-      <nav class="guide-nav" aria-label="Game information"><a href="#game">Play Prescriptris</a><a href="#how-to-play">Rules &amp; controls</a><a href="#faq">Questions</a></nav>
-      <div class="guide-overview">
-        <div><h2 id="about-title">A free pharmacy puzzle game</h2><p>Prescriptris is a free, single-player falling-block puzzle game set in a retro pharmacy. Stack pill pieces, clear horizontal rows, and collect matching squares with the bottling mechanic.</p><p>Play online on desktop, tablet, or phone. Use a keyboard or the on-screen touch controls. There is no download or account required.</p></div>
-        <figure><img src="assets/v2/prescriptris-gameplay.jpg" width="1265" height="712" loading="lazy" decoding="async" alt="Prescriptris gameplay: pill-shaped puzzle pieces, score and next-piece panels, and a pixel-art pharmacist."><figcaption>The night shift: stack, match, dispense.</figcaption></figure>
-      </div>
-      <section id="how-to-play" aria-labelledby="rules-title">
-        <h2 id="rules-title">How to play Prescriptris</h2>
-        <ol class="rules-list">
-          <li><strong>Stack and clear.</strong> Move and rotate each falling piece. Fill a complete horizontal row with any pill types to clear it. Keep the stack below the top of the tray.</li>
-          <li><strong>Build matching batches.</strong> Make a 2×2, 3×3, or 4×4 square of the same pill type: red/cream capsules, white round tablets, or blue oblong caplets.</li>
-          <li><strong>Choose when to bottle.</strong> Space places a piece and clears rows normally. B drops the piece and collects matching squares first, largest batches first. A successful bottle collection settles loose pills before clearing full rows. Row clears can remove pills from an uncollected square.</li>
-        </ol>
-        <p>A 2×2 batch earns 80 points, a 3×3 earns 240, and a 4×4 earns 600, multiplied by your level. Clear 10 rows to level up. Complete the current prescription for an extra bonus.</p>
-        <div class="guide-controls"><p><strong>Keyboard:</strong> ←/→ or A/D to move; ↑/X to rotate clockwise; Z to rotate back; ↓/S to soft drop; Space to hard drop; B to bottle and drop; C/Shift to hold; P/Escape to pause.</p><p><strong>Phone or tablet:</strong> use the arrow, rotate, and Drop buttons beneath the tray. Hold/swap and Bottle + drop have their own buttons. Choose Continue after an automatic pause.</p></div>
-      </section>
-      <section id="faq" aria-labelledby="faq-title">
-        <h2 id="faq-title">Prescriptris questions</h2>
-        <dl class="faq-list">
-          <div><dt>Is Prescriptris free to play?</dt><dd>Yes. Play the full browser game for free, without signing up or installing an app.</dd></div>
-          <div><dt>Can I play on my phone?</dt><dd>Yes. Prescriptris has a responsive layout and on-screen touch controls. Desktop players can use the keyboard.</dd></div>
-          <div><dt>Do I need pharmacy knowledge?</dt><dd>No. You match three pill shapes and colors. The game does not test medication names or dosages.</dd></div>
-          <div><dt>How is bottling different from clearing rows?</dt><dd>Rows clear when every cell is filled, whatever the pill types. Bottling collects matching square batches when you choose Bottle + drop or press B.</dd></div>
-          <div><dt>Is my high score saved?</dt><dd>Your best score is saved in this browser when local storage is available. It is not a shared online leaderboard. Clearing browser data can remove it.</dd></div>
-          <div><dt>Can I turn off sound and spinning effects?</dt><dd>Yes. Use Sound and CRT in the toolbar. The game also respects your system’s reduced-motion preference.</dd></div>
-        </dl>
-      </section>
-      <a class="back-to-game" href="#game">Back to the game ↑</a>
-    </section>
-    <footer class="page-footer"><span>PRESCRIPTRIS <span class="footer-cross">✚</span> EST. 2025</span><span>A SMALL DOSE OF ARCADE JOY.</span></footer>
+    <p class="game-summary">Prescriptris is a free pharmacy-themed falling-block game for keyboard and touch.</p>
+    <footer class="page-footer"><span>PRESCRIPTRIS <span class="footer-cross">✚</span> EST. 2025</span><nav class="site-links" aria-label="Game information"><a id="how-to-play" href="how-to-play/" target="_blank" rel="noopener" data-game-help aria-label="How to play (opens in a new tab)">How to play ↗</a><a id="faq" href="faq/" target="_blank" rel="noopener" data-game-help aria-label="FAQ (opens in a new tab)">FAQ ↗</a></nav></footer>
     <p id="announcer" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></p>
     <p id="asset-notice" class="asset-notice" hidden>Some artwork could not load. The game is using simple pill tiles; refresh to retry.</p>
     <noscript><p class="asset-notice">Enable JavaScript to play Prescriptris.</p></noscript>

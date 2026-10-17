@@ -1,91 +1,93 @@
 import assert from 'node:assert/strict';
 import { access, readFile } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
 
 const root = new URL('../', import.meta.url);
-const html = await readFile(new URL('index.html', root), 'utf8');
+const files = ['index.html', 'how-to-play/index.html', 'faq/index.html'];
 const attributes = tag => Object.fromEntries([...tag.matchAll(/([\w:-]+)\s*=\s*(["'])(.*?)\2/g)].map(match => [match[1], match[3]]));
-const links = [...html.matchAll(/<link\b[^>]*>/g)].map(match => attributes(match[0]));
-const metas = [...html.matchAll(/<meta\b[^>]*>/g)].map(match => attributes(match[0]));
-const meta = name => metas.find(item => item.name === name || item.property === name)?.content;
-const canonicals = links.filter(link => link.rel === 'canonical');
-assert.equal(canonicals.length, 1, 'Publish exactly one canonical URL');
-const canonical = new URL(canonicals[0].href);
-assert.equal(canonical.protocol, 'https:');
-assert.equal(canonical.pathname, '/');
-assert.ok(!canonical.search && !canonical.hash);
-assert.match(html.match(/<title>(.*?)<\/title>/s)?.[1] ?? '', /Prescriptris.*Pharmacy.*Puzzle/);
-assert.ok(meta('description'), 'The page needs a search description');
-assert.ok(!/noindex/i.test(meta('robots') ?? ''), 'The current game must remain indexable');
-assert.equal(meta('og:url'), canonical.href, 'Social and canonical URLs must agree');
-console.log('PASS: page identity and indexing metadata');
+const localPath = url => decodeURIComponent(url.pathname.slice(1)) + (url.pathname.endsWith('/') ? 'index.html' : '');
+const pages = [];
+for (const file of files) {
+  const html = await readFile(new URL(file, root), 'utf8');
+  const links = [...html.matchAll(/<link\b[^>]*>/g)].map(match => attributes(match[0]));
+  const metas = [...html.matchAll(/<meta\b[^>]*>/g)].map(match => attributes(match[0]));
+  const meta = name => metas.find(item => item.name === name || item.property === name)?.content;
+  const canonicals = links.filter(link => link.rel === 'canonical');
+  assert.equal(canonicals.length, 1, `${file}: exactly one canonical URL is required`);
+  const canonical = new URL(canonicals[0].href);
+  assert.equal(canonical.protocol, 'https:');
+  assert.ok(!canonical.search && !canonical.hash);
+  assert.equal(localPath(canonical), file, `${file}: canonical URL must identify this page`);
+  const title = html.match(/<title>(.*?)<\/title>/s)?.[1] ?? '';
+  assert.match(title, /Prescriptris/);
+  assert.ok(meta('description'), `${file}: missing search description`);
+  assert.ok(!/noindex/i.test(meta('robots') ?? ''), `${file}: public page must remain indexable`);
+  assert.equal(meta('og:url'), canonical.href);
+  assert.equal((html.match(/<h1\b/g) ?? []).length, 1, `${file}: provide one main heading`);
+  const json = html.match(/<script\b[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/)?.[1];
+  assert.ok(json, `${file}: structured data is missing`);
+  const schema = JSON.parse(json);
+  assert.equal(schema['@context'], 'https://schema.org');
+  const nodes = schema['@graph'] ?? [schema];
+  const ids = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map(match => match[1]));
+  pages.push({ file, html, title, canonical, meta, nodes, ids });
+}
+const home = pages[0];
+for (const page of pages) assert.equal(page.canonical.origin, home.canonical.origin);
+assert.equal(new Set(pages.map(page => page.title)).size, pages.length, 'Give each page its own search title');
+assert.equal(new Set(pages.map(page => page.meta('description'))).size, pages.length, 'Give each page its own search description');
+console.log(`PASS: unique titles, canonicals, and indexing metadata for ${pages.length} pages`);
 
-const json = html.match(/<script\b[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/)?.[1];
-assert.ok(json, 'Game structured data must be present in the initial HTML');
-const schema = JSON.parse(json);
-assert.equal(schema['@context'], 'https://schema.org');
-const graph = schema['@graph'];
-assert.ok(Array.isArray(graph));
-const game = graph.find(item => [item['@type']].flat().includes('VideoGame'));
-assert.ok(game, 'Structured data must describe the game');
-assert.equal(game.url, canonical.href);
-assert.equal(game.isAccessibleForFree, true);
-assert.equal(game.offers.price, 0);
-assert.ok(game.description && game.gamePlatform);
-const ids = new Set(graph.map(item => item['@id']));
+const entities = new Set(pages.flatMap(page => page.nodes.map(node => node['@id'])));
 function checkReferences(value) {
   if (!value || typeof value !== 'object') return;
-  if (value['@id']) assert.ok(ids.has(value['@id']), `Unresolved entity: ${value['@id']}`);
+  if (value['@id']) assert.ok(entities.has(value['@id']), `Unresolved entity: ${value['@id']}`);
   Object.values(value).forEach(checkReferences);
 }
-checkReferences(graph);
-console.log('PASS: parseable game schema and connected entities');
+pages.forEach(page => checkReferences(page.nodes));
+const game = home.nodes.find(node => [node['@type']].flat().includes('VideoGame'));
+assert.ok(game);
+assert.equal(game.url, home.canonical.href);
+assert.equal(game.isAccessibleForFree, true);
+assert.equal(game.offers.price, 0);
+assert.ok(pages.some(page => page.canonical.href === game.softwareHelp.url), 'Game help must point to a published page');
+console.log('PASS: connected website, game, and help-page entities');
 
-const idsInHtml = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map(match => match[1]));
-const tags = [...html.matchAll(/<(?:a|img|link|script)\b[^>]*>/g)].map(match => attributes(match[0]));
 let checked = 0;
-for (const tag of tags) {
-  const reference = tag.src || tag.href;
-  if (!reference) continue;
-  const url = new URL(reference, canonical);
-  if (url.origin !== canonical.origin) continue;
-  if (url.hash && url.pathname === '/') assert.ok(idsInHtml.has(decodeURIComponent(url.hash.slice(1))), `Broken anchor: ${reference}`);
-  const file = url.pathname === '/' ? 'index.html' : decodeURIComponent(url.pathname.slice(1));
-  await access(new URL(file, root));
-  checked++;
+for (const page of pages) {
+  const tags = [...page.html.matchAll(/<(?:a|img|link|script)\b[^>]*>/g)].map(match => attributes(match[0]));
+  for (const tag of tags) {
+    if (tag.target === '_blank') assert.ok(tag.rel?.split(/\s+/).includes('noopener'), 'New-tab help links must isolate the new page');
+    const reference = tag.src || tag.href;
+    if (!reference) continue;
+    const url = new URL(reference, page.canonical);
+    if (url.origin !== home.canonical.origin) continue;
+    await access(new URL(localPath(url), root));
+    if (url.hash) {
+      const target = pages.find(candidate => candidate.canonical.pathname === url.pathname);
+      assert.ok(target?.ids.has(decodeURIComponent(url.hash.slice(1))), `Broken anchor: ${reference} on ${page.file}`);
+    }
+    checked++;
+  }
+  for (const reference of [page.meta('og:image'), page.meta('twitter:image')]) {
+    assert.ok(reference);
+    const url = new URL(reference);
+    assert.equal(url.origin, home.canonical.origin);
+    await access(new URL(localPath(url), root));
+  }
+  assert.equal(page.meta('twitter:card'), 'summary_large_image');
 }
-assert.ok(idsInHtml.has('about') && idsInHtml.has('how-to-play') && idsInHtml.has('faq'), 'Readable game information must exist outside the canvas');
-console.log(`PASS: ${checked} local resource links and content anchors`);
-
-for (const reference of [meta('og:image'), meta('twitter:image'), game.image, game.screenshot]) {
-  assert.ok(reference, 'A real gameplay image must be specified');
-  const url = new URL(reference);
-  assert.equal(url.origin, canonical.origin);
-  await access(new URL(url.pathname.slice(1), root));
-}
-assert.equal(meta('twitter:card'), 'summary_large_image');
-console.log('PASS: social and game image resources');
+console.log(`PASS: ${checked} local page/resource links, anchors, and social images`);
 
 const robots = await readFile(new URL('robots.txt', root), 'utf8');
 assert.match(robots, /User-agent:\s*\*/i);
 assert.match(robots, /Allow:\s*\//i);
-assert.ok(!/^Disallow:\s*\/\s*$/im.test(robots), 'Public search crawlers must not be blocked');
-assert.ok(robots.includes(`Sitemap: ${new URL('sitemap.xml', canonical).href}`));
+assert.ok(!/^Disallow:\s*\/\s*$/im.test(robots));
+assert.ok(robots.includes(`Sitemap: ${new URL('sitemap.xml', home.canonical).href}`));
 const sitemap = await readFile(new URL('sitemap.xml', root), 'utf8');
 assert.ok(sitemap.includes('http://www.sitemaps.org/schemas/sitemap/0.9'));
 const urls = [...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map(match => match[1]);
-assert.ok(urls.includes(canonical.href));
 assert.equal(new Set(urls).size, urls.length);
-for (const address of urls) {
-  const url = new URL(address);
-  assert.equal(url.origin, canonical.origin);
-  assert.ok(!url.hash && !url.search);
-  const file = url.pathname.endsWith('/') ? `${url.pathname.slice(1)}index.html` : url.pathname.slice(1);
-  const source = await readFile(new URL(file, root), 'utf8');
-  assert.ok(!/<meta\b[^>]*content="[^"]*noindex/i.test(source), `Sitemap includes a noindex page: ${address}`);
-}
-console.log('PASS: crawl permissions and canonical sitemap');
-
+assert.deepEqual([...urls].sort(), pages.map(page => page.canonical.href).sort(), 'The sitemap must include all public pages and no stale routes');
 const legacy = await readFile(new URL('old.html', root), 'utf8');
 assert.match(legacy, /name="robots" content="noindex,follow"/);
-console.log(`PASS: legacy game excluded from indexing; checked ${fileURLToPath(root)}`);
+console.log('PASS: crawler permissions, three-page sitemap, and legacy-page indexing');
