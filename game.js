@@ -18,6 +18,7 @@ let best = 0;
 let savedBest = 0;
 let lastRevision = -1;
 let lastStatus = '';
+let automaticPause = false;
 let previousTime = 0;
 let lastDraw = 0;
 let boardDirty = true;
@@ -353,6 +354,8 @@ function processEvents(now) {
   const events = engine.events.splice(0);
   for (const event of events) {
     playSound(event.type);
+    if (event.type === 'start') trackGameEvent('game_start', { game_name:'Prescriptris' });
+    if (event.type === 'over') trackGameEvent('game_end', { game_name:'Prescriptris', score:engine.score, level:engine.level, lines:engine.lines, bottles:engine.bottles });
     if (event.type === 'lock' || event.type === 'over') persistBest();
     if (event.type === 'clear') {
       celebratingUntil = now + 1000;
@@ -375,6 +378,9 @@ function processEvents(now) {
       $('pharmacist-message').textContent = 'Another prescription filled. Thank you!';
     }
   }
+}
+function trackGameEvent(name, parameters) {
+  try { if (typeof window.gtag === 'function') window.gtag('event', name, parameters); } catch { /* Analytics must never interrupt play. */ }
 }
 
 function updateInterface() {
@@ -432,10 +438,15 @@ function updateOverlay() {
   $('final-stats').textContent = `Score ${engine.score} · Best ${best} · ${engine.lines} rows · ${engine.bottles} bottles`;
   $('start-button').textContent = paused ? 'CONTINUE ▶' : over ? 'PLAY AGAIN ▶' : 'START GAME ▶';
   $('overlay-hint').textContent = paused ? 'ENTER TO CONTINUE' : over ? 'ENTER TO PLAY AGAIN' : 'ENTER TO START · KEYBOARD & TOUCH';
-  if (over || paused) { clearInputs(); $('start-button').focus({ preventScroll:true }); }
+  if (over || paused) { clearInputs(); if (over || !automaticPause) $('start-button').focus({ preventScroll:true }); }
   if (over) announce(`Game over. Score ${engine.score}. ${engine.bottles} bottles. Choose Play again for a new game.`);
 }
 function clearInputs() { heldKeys.clear(); touchDownPointers.clear(); horizontalInput.clear(); }
+function focusBoard() {
+  canvas.focus({ preventScroll:true });
+  const rectangle = canvas.getBoundingClientRect();
+  if (rectangle.bottom <= 0 || rectangle.top >= window.innerHeight) canvas.scrollIntoView({ block:'start', behavior:'instant' });
+}
 function startOrResume() {
   const starting = engine.status !== 'paused';
   initializeAudio(); clearInputs();
@@ -443,15 +454,15 @@ function startOrResume() {
   if (engine.status === 'paused') engine.pause();
   else { persistBest(); engine.start(); particles = []; bottleFlashes = []; toastUntil = stampUntil = celebratingUntil = 0; $('board-toast').classList.remove('show'); $('filled-stamp').classList.remove('show'); $('pharmacist-message').textContent = 'One pill at a time. You have this.'; }
   previousTime = performance.now();
-  canvas.focus({ preventScroll:true });
   updateInterface();
   // Compacting the marquee must not leave a freshly started tray above the view.
   if (starting) window.scrollTo({ top:0, behavior:'instant' });
+  focusBoard();
 }
 function pause() {
   if (!['playing','paused'].includes(engine.status)) return;
   clearInputs(); engine.pause(); previousTime = performance.now(); updateInterface();
-  if (engine.status === 'playing') canvas.focus({ preventScroll:true });
+  if (engine.status === 'playing') focusBoard();
 }
 $('start-button').addEventListener('click', startOrResume);
 $('pause-button').addEventListener('click', pause);
@@ -521,9 +532,19 @@ function releasePointer(event) {
 window.addEventListener('pointerup',releasePointer);
 window.addEventListener('pointercancel',releasePointer);
 window.addEventListener('lostpointercapture',releasePointer);
-function autoPause() { clearInputs(); if (engine.status === 'playing') pause(); persistBest(); }
+function autoPause() {
+  clearInputs();
+  if (engine.status === 'playing') {
+    automaticPause = true;
+    try { pause(); } finally { automaticPause = false; }
+  }
+  persistBest();
+}
 window.addEventListener('blur', autoPause);
 document.addEventListener('visibilitychange', () => { if (document.hidden) autoPause(); });
+if (window.IntersectionObserver) new IntersectionObserver(([entry]) => { if (!entry.isIntersecting) autoPause(); }).observe(canvas);
+$('about')?.addEventListener('focusin', autoPause);
+$('about')?.addEventListener('pointerdown', autoPause);
 window.addEventListener('pagehide', persistBest);
 window.addEventListener('storage', event => {
   if (event.key !== 'prescriptris_high' && event.key !== null) return;

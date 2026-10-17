@@ -5,6 +5,8 @@ The PNG assets were generated with the built-in ImageGen tool. The SVG wordmark 
 | File | Purpose |
 | --- | --- |
 | `prescriptris-wordmark.svg` | Original 5×7 module block lettering with a warm face, light outline, and blue extrusion; crisp at desktop and mobile sizes |
+| `favicon.svg` | Original pixel-style pharmacy cross in the game's mint, navy, and silver palette |
+| `prescriptris-gameplay.jpg` | Unedited screenshot of the live game for social sharing and the visible game guide; not generated artwork |
 | `pharmacy.png` | Walnut/teal apothecary background, darkened by CSS outside the tray |
 | `pharmacist.png` | Two equal horizontal character frames: idle and celebration; genuine alpha transparency |
 | `medication-pills.png` | Active pill sprites: red/cream capsule, white scored round tablet, blue scored oblong caplet; three equal frames with alpha transparency |

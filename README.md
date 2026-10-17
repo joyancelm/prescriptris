@@ -16,6 +16,24 @@ Open http://127.0.0.1:8766. To use another port, set `$env:PORT = '8767'` before
 
 The existing public site is https://www.prescriptris.com, served by GitHub Pages from this repository's `main` branch at the root. Run `npm test` and `npm run check`, then commit and push the reviewed source and assets to `main`. No package installation or production build is required. Keep `CNAME` and `.nojekyll` in the published root. After Pages finishes deploying, check that the live title, JavaScript modules, fonts, and artwork load and that a game can start.
 
+## Search and AI discovery
+
+The homepage includes a descriptive search title, a plain-HTML game description, rules, and questions below the playfield. These are available without running the canvas game. `robots.txt` allows public crawlers, including search and AI search crawlers, and links to `sitemap.xml`. The sitemap lists the canonical homepage only. The domain's existing redirects consolidate HTTP and the bare domain onto `https://www.prescriptris.com/`. The legacy `old.html` remains accessible but has `noindex,follow` metadata.
+
+The JSON-LD graph connects the website, homepage, and free single-player browser game using Schema.org `VideoGame` and `WebApplication` types. It describes actual features and price, without invented reviews or ratings. It is descriptive entity data; it does not establish eligibility for Google's software-app rich results, which require genuine review/rating data. Social previews use an actual gameplay screenshot, and the favicon uses the pharmacy cross. No `llms.txt` or special AI-ranking mechanism is required or promised.
+
+When you scroll away from the board or interact with the guide, the game pauses automatically without moving keyboard focus out of the guide. Continuing brings an off-screen board back into view. The guide does not change the puzzle's rules.
+
+For the site owner after publication:
+
+1. Add or verify `prescriptris.com` in [Google Search Console](https://search.google.com/search-console/) and [Bing Webmaster Tools](https://www.bing.com/webmasters/). Verification requires your owner account and possibly a DNS record or provider-supplied verification file.
+2. Submit `https://www.prescriptris.com/sitemap.xml`. Inspect the canonical homepage in Search Console and request indexing. File publication alone does not verify ownership, submit a sitemap, or prove that the page is indexed.
+3. Review impressions, clicks, search queries, and indexing status. Bing's AI Performance report can show AI citations where available. There is no guarantee of search rankings or AI recommendations.
+4. Through the existing production `gtag` setup, the game queues `game_start` once per new game and `game_end` at game over, with score, level, lines, and bottles. Continue/resume does not send another start. Local play sends no analytics. Confirm collection in your Analytics account, then use these events to measure whether search visitors actually play, rather than counting only page views.
+5. Share the actual game with relevant puzzle-game and pharmacy communities when appropriate. Build genuine mentions and links, and review mobile loading with PageSpeed Insights. Do not add keyword-stuffed pages, fake testimonials, or unsupported educational claims.
+
+References: [Google Search AI features](https://developers.google.com/search/docs/appearance/ai-features), [Bing Webmaster Guidelines](https://www.bing.com/webmasters/help/bing-webmaster-guidelines-30fba23a), [OpenAI crawler documentation](https://developers.openai.com/api/docs/bots), and [Schema.org VideoGame](https://schema.org/VideoGame).
+
 ## Play
 
 Choose **START GAME** or press **Enter**. Nothing falls until you begin.
@@ -78,8 +96,11 @@ Image loading has error and timeout handling. Missing art falls back to simple t
 ```powershell
 npm test
 npm run check
+npm run check:seo
 ```
 
 The engine and input suites cover row preservation, multiple-row clears, both blocked hold paths, placement statistics, defensive locking, manual bottle scoring, 4×4 construction, matching rules, gravity after bottling, orders, levels, seven-piece bags, wall kicks, frame-independent lock timing, paused input, large collapses, randomized play, directional handoff, pointer/keyboard overlap, and clearing held input on pause.
 
 For browser QA: start a game with Enter or START GAME; exercise movement, rotate, hold, both drop actions, pause/continue, sound, and touch buttons. Check placement statistics against locked pieces. Finish a game and verify an arrow key does not restart it; choose PLAY AGAIN. Check both desktop and narrow layouts for overlap and horizontal overflow. The engine is intentionally not exposed as a mutable browser debug global.
+
+`check:seo` verifies canonical/indexing metadata, parseable connected game entities, local resource and anchor links, social images, crawler access, canonical sitemap entries, and legacy-page indexing metadata. Browser QA should also verify that reading the guide pauses the game and that returning to the game works on desktop and mobile. Inspect the published files after deployment; these local checks do not replace search-engine owner verification or live indexing reports.
